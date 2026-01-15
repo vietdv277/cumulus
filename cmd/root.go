@@ -40,9 +40,9 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&profile, "profile", "p", "", "AWS profile to use")
 	rootCmd.PersistentFlags().StringVarP(&region, "region", "r", "", "AWS region to use")
 
-	// Bind flagas to viper
-	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
-	viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
+	// Bind flags to viper
+	_ = viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
+	_ = viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
 }
 
 func initConfig() {
