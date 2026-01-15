@@ -3,10 +3,9 @@ package aws
 import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
-	"github.com/vietdinh/cumulus/pkg/types"
+	pkgtypes "github.com/vietdv277/cumulus/pkg/types"
 )
 
 // ListInstanceInput contains parameters for listing EC2 instances
@@ -17,7 +16,7 @@ type ListInstanceInput struct {
 	States      []string
 }
 
-func (c *Client) ListInstances(input *ListInstanceInput) ([]*Instance, error) {
+func (c *Client) ListInstances(input *ListInstanceInput) ([]pkgtypes.Instance, error) {
 	if input == nil {
 		input = &ListInstanceInput{}
 	}
@@ -66,7 +65,7 @@ func (c *Client) ListInstances(input *ListInstanceInput) ([]*Instance, error) {
 	}
 
 	// Convert to internal Instance type
-	var instances []types.Instance
+	var instances []pkgtypes.Instance
 	for _, reservation := range output.Reservations {
 		for _, inst := range reservation.Instances {
 			instances = append(instances, toInstance(inst))
@@ -77,8 +76,8 @@ func (c *Client) ListInstances(input *ListInstanceInput) ([]*Instance, error) {
 }
 
 // toInstance converts an EC2 Instance to our Instance type
-func toInstance(i ec2types.Instance) types.Instance {
-	inst := types.Instance{
+func toInstance(i ec2types.Instance) pkgtypes.Instance {
+	inst := pkgtypes.Instance{
 		ID:    deref(i.InstanceId),
 		State: string(i.State.Name),
 		Type:  string(i.InstanceType),

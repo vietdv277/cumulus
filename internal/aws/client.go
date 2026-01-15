@@ -26,10 +26,17 @@ func WithProfile(profile string) ClientOption {
 	}
 }
 
+// WithRegion sets the AWS region for the client
+func WithRegion(region string) ClientOption {
+	return func(c *Client) {
+		c.region = region
+	}
+}
+
 // NewClient creates a new AWS Client with the given options
-func NewClient(ctx context.Context, region string, opts ...ClientOption) (*Client, error) {
+func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		ctx: context.Background(),
+		ctx: ctx,
 	}
 
 	// Apply options

@@ -1,13 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"go/types"
+	"os"
 
-	"github.com/charmbracelet/lipgloss/table"
 	"github.com/fatih/color"
+	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	"github.com/vietdv277/cumulus/internal/aws"
+	pkgtypes "github.com/vietdv277/cumulus/pkg/types"
 )
 
 var ec2Cmd = &cobra.Command{
@@ -53,10 +55,10 @@ func init() {
 func runEC2List(cmd *cobra.Command, args []string) error {
 	// Create AWS client
 	client, err := aws.NewClient(
-		aws.WithProfile(awsProfile),
-		aws.WithRegion(awsRegion),
-		)
-
+		context.Background(),
+		aws.WithProfile(GetProfile()),
+		aws.WithRegion(GetRegion()),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create AWS client: %w", err)
 	}
@@ -83,21 +85,21 @@ func runEC2List(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print results
-	printInstances(instances)
+	printInstanceTable(instances)
 
 	return nil
 }
 
-func printInstanceTable(instance []types.Instance) {
+func printInstanceTable(instances []pkgtypes.Instance) {
 	// Create styled table
 	headerFmt := color.New(color.FgGreen, color.Underline).SprintfFunc()
 	columnFmt := color.New(color.FgYellow).SprintfFunc()
 
 	tbl := table.New("ID", "Name", "Private IP", "State", "Type", "AZ", "ASG")
-	tbl.WithHeaderFormatter(headerFmt).WithColumnFormatter(columnFmt)
+	tbl.WithHeaderFormatter(headerFmt).WithFirstColumnFormatter(columnFmt)
 	tbl.WithWriter(os.Stdout)
 
-	for _, inst := range instance {
+	for _, inst := range instances {
 		tbl.AddRow(
 			inst.ID,
 			truncate(inst.Name, 30),
@@ -106,7 +108,7 @@ func printInstanceTable(instance []types.Instance) {
 			inst.Type,
 			inst.AZ,
 			truncate(inst.ASG, 25),
-			)
+		)
 	}
 
 	tbl.Print()
