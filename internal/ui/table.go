@@ -4,53 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	pkgtypes "github.com/vietdv277/cumulus/pkg/types"
 )
 
-// Box drawing characters
-const (
-	topLeft     = "╭"
-	topRight    = "╮"
-	bottomLeft  = "╰"
-	bottomRight = "╯"
-	horizontal  = "─"
-	vertical    = "│"
-	leftT       = "├"
-	rightT      = "┤"
-	topT        = "┬"
-	bottomT     = "┴"
-	cross       = "┼"
-)
-
 // Column widths (display width, not byte length)
 var columnWidths = []int{22, 26, 14, 11, 12, 18, 20}
-
-// Styles
-var (
-	borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
-	idStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	nameStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
-	ipStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	typeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	azStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	asgStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-
-	runningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	stoppedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-)
-
-// padRight pads a string to the specified display width using runewidth
-func padRight(s string, width int) string {
-	sw := runewidth.StringWidth(s)
-	if sw >= width {
-		return runewidth.Truncate(s, width, "...")
-	}
-	return s + strings.Repeat(" ", width-sw)
-}
 
 // PrintInstanceTable prints instances in a styled box table
 func PrintInstanceTable(instances []pkgtypes.Instance) {
@@ -60,87 +19,87 @@ func PrintInstanceTable(instances []pkgtypes.Instance) {
 	var sb strings.Builder
 
 	// Top border
-	sb.WriteString(borderStyle.Render(topLeft))
+	sb.WriteString(BorderStyle.Render(TopLeft))
 	for i, w := range columnWidths {
-		sb.WriteString(borderStyle.Render(strings.Repeat(horizontal, w+2)))
+		sb.WriteString(BorderStyle.Render(strings.Repeat(Horizontal, w+2)))
 		if i < len(columnWidths)-1 {
-			sb.WriteString(borderStyle.Render(topT))
+			sb.WriteString(BorderStyle.Render(TopT))
 		}
 	}
-	sb.WriteString(borderStyle.Render(topRight))
+	sb.WriteString(BorderStyle.Render(TopRight))
 	sb.WriteString("\n")
 
 	// Header row
-	sb.WriteString(borderStyle.Render(vertical))
+	sb.WriteString(BorderStyle.Render(Vertical))
 	for i, h := range headers {
 		cell := " " + padRight(h, columnWidths[i]) + " "
-		sb.WriteString(headerStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(HeaderStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 	}
 	sb.WriteString("\n")
 
 	// Header separator
-	sb.WriteString(borderStyle.Render(leftT))
+	sb.WriteString(BorderStyle.Render(LeftT))
 	for i, w := range columnWidths {
-		sb.WriteString(borderStyle.Render(strings.Repeat(horizontal, w+2)))
+		sb.WriteString(BorderStyle.Render(strings.Repeat(Horizontal, w+2)))
 		if i < len(columnWidths)-1 {
-			sb.WriteString(borderStyle.Render(cross))
+			sb.WriteString(BorderStyle.Render(Cross))
 		}
 	}
-	sb.WriteString(borderStyle.Render(rightT))
+	sb.WriteString(BorderStyle.Render(RightT))
 	sb.WriteString("\n")
 
 	// Data rows
 	for _, inst := range instances {
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// ID
 		cell := " " + padRight(inst.ID, columnWidths[0]) + " "
-		sb.WriteString(idStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(IDStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// Name
 		cell = " " + padRight(inst.Name, columnWidths[1]) + " "
-		sb.WriteString(nameStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(NameStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// Private IP
 		cell = " " + padRight(inst.PrivateIP, columnWidths[2]) + " "
-		sb.WriteString(ipStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(IPStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// State with indicator
 		stateCell := formatState(inst.State, columnWidths[3])
 		sb.WriteString(stateCell)
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// Type
 		cell = " " + padRight(inst.Type, columnWidths[4]) + " "
-		sb.WriteString(typeStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(TypeStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// AZ
 		cell = " " + padRight(inst.AZ, columnWidths[5]) + " "
-		sb.WriteString(azStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(AZStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		// ASG
 		cell = " " + padRight(inst.ASG, columnWidths[6]) + " "
-		sb.WriteString(asgStyle.Render(cell))
-		sb.WriteString(borderStyle.Render(vertical))
+		sb.WriteString(ASGStyle.Render(cell))
+		sb.WriteString(BorderStyle.Render(Vertical))
 
 		sb.WriteString("\n")
 	}
 
 	// Bottom border
-	sb.WriteString(borderStyle.Render(bottomLeft))
+	sb.WriteString(BorderStyle.Render(BottomLeft))
 	for i, w := range columnWidths {
-		sb.WriteString(borderStyle.Render(strings.Repeat(horizontal, w+2)))
+		sb.WriteString(BorderStyle.Render(strings.Repeat(Horizontal, w+2)))
 		if i < len(columnWidths)-1 {
-			sb.WriteString(borderStyle.Render(bottomT))
+			sb.WriteString(BorderStyle.Render(BottomT))
 		}
 	}
-	sb.WriteString(borderStyle.Render(bottomRight))
+	sb.WriteString(BorderStyle.Render(BottomRight))
 	sb.WriteString("\n")
 
 	// Print the table
@@ -152,21 +111,21 @@ func PrintInstanceTable(instances []pkgtypes.Instance) {
 
 func formatState(state string, width int) string {
 	var indicator string
-	var style lipgloss.Style
+	var style = StoppedStyle
 
 	switch state {
 	case "running":
 		indicator = "●"
-		style = runningStyle
+		style = RunningStyle
 	case "stopped":
 		indicator = "○"
-		style = stoppedStyle
+		style = StoppedStyle
 	case "pending", "stopping":
 		indicator = "◐"
-		style = pendingStyle
+		style = PendingStyle
 	default:
 		indicator = "○"
-		style = stoppedStyle
+		style = StoppedStyle
 	}
 
 	// Format: " ● state " with proper padding
@@ -191,16 +150,16 @@ func printSummary(instances []pkgtypes.Instance) {
 
 	var parts []string
 	if c := counts["running"]; c > 0 {
-		parts = append(parts, runningStyle.Render(fmt.Sprintf("%d running", c)))
+		parts = append(parts, RunningStyle.Render(fmt.Sprintf("%d running", c)))
 	}
 	if c := counts["stopped"]; c > 0 {
-		parts = append(parts, stoppedStyle.Render(fmt.Sprintf("%d stopped", c)))
+		parts = append(parts, StoppedStyle.Render(fmt.Sprintf("%d stopped", c)))
 	}
 	if c := counts["pending"]; c > 0 {
-		parts = append(parts, pendingStyle.Render(fmt.Sprintf("%d pending", c)))
+		parts = append(parts, PendingStyle.Render(fmt.Sprintf("%d pending", c)))
 	}
 	if c := counts["stopping"]; c > 0 {
-		parts = append(parts, pendingStyle.Render(fmt.Sprintf("%d stopping", c)))
+		parts = append(parts, PendingStyle.Render(fmt.Sprintf("%d stopping", c)))
 	}
 
 	total := len(instances)
