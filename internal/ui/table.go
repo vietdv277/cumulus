@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	pkgtypes "github.com/vietdv277/cumulus/pkg/types"
 )
 
@@ -23,7 +24,7 @@ const (
 	cross       = "┼"
 )
 
-// Column widths
+// Column widths (display width, not byte length)
 var columnWidths = []int{22, 26, 14, 11, 12, 18, 20}
 
 // Styles
@@ -41,6 +42,15 @@ var (
 	stoppedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
+
+// padRight pads a string to the specified display width using runewidth
+func padRight(s string, width int) string {
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
+		return runewidth.Truncate(s, width, "...")
+	}
+	return s + strings.Repeat(" ", width-sw)
+}
 
 // PrintInstanceTable prints instances in a styled box table
 func PrintInstanceTable(instances []pkgtypes.Instance) {
@@ -63,7 +73,7 @@ func PrintInstanceTable(instances []pkgtypes.Instance) {
 	// Header row
 	sb.WriteString(borderStyle.Render(vertical))
 	for i, h := range headers {
-		cell := fmt.Sprintf(" %-*s ", columnWidths[i], truncateStr(h, columnWidths[i]))
+		cell := " " + padRight(h, columnWidths[i]) + " "
 		sb.WriteString(headerStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 	}
@@ -85,17 +95,17 @@ func PrintInstanceTable(instances []pkgtypes.Instance) {
 		sb.WriteString(borderStyle.Render(vertical))
 
 		// ID
-		cell := fmt.Sprintf(" %-*s ", columnWidths[0], truncateStr(inst.ID, columnWidths[0]))
+		cell := " " + padRight(inst.ID, columnWidths[0]) + " "
 		sb.WriteString(idStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 
 		// Name
-		cell = fmt.Sprintf(" %-*s ", columnWidths[1], truncateStr(inst.Name, columnWidths[1]))
+		cell = " " + padRight(inst.Name, columnWidths[1]) + " "
 		sb.WriteString(nameStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 
 		// Private IP
-		cell = fmt.Sprintf(" %-*s ", columnWidths[2], truncateStr(inst.PrivateIP, columnWidths[2]))
+		cell = " " + padRight(inst.PrivateIP, columnWidths[2]) + " "
 		sb.WriteString(ipStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 
@@ -105,17 +115,17 @@ func PrintInstanceTable(instances []pkgtypes.Instance) {
 		sb.WriteString(borderStyle.Render(vertical))
 
 		// Type
-		cell = fmt.Sprintf(" %-*s ", columnWidths[4], truncateStr(inst.Type, columnWidths[4]))
+		cell = " " + padRight(inst.Type, columnWidths[4]) + " "
 		sb.WriteString(typeStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 
 		// AZ
-		cell = fmt.Sprintf(" %-*s ", columnWidths[5], truncateStr(inst.AZ, columnWidths[5]))
+		cell = " " + padRight(inst.AZ, columnWidths[5]) + " "
 		sb.WriteString(azStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 
 		// ASG
-		cell = fmt.Sprintf(" %-*s ", columnWidths[6], truncateStr(inst.ASG, columnWidths[6]))
+		cell = " " + padRight(inst.ASG, columnWidths[6]) + " "
 		sb.WriteString(asgStyle.Render(cell))
 		sb.WriteString(borderStyle.Render(vertical))
 
@@ -159,8 +169,18 @@ func formatState(state string, width int) string {
 		style = stoppedStyle
 	}
 
-	text := fmt.Sprintf(" %s %-*s ", indicator, width-3, state)
-	return style.Render(text)
+	// Format: " ● state " with proper padding
+	stateText := indicator + " " + state
+	stateWidth := runewidth.StringWidth(stateText)
+
+	// Pad to fill the column width
+	padding := width - stateWidth
+	if padding < 0 {
+		padding = 0
+	}
+
+	cell := " " + stateText + strings.Repeat(" ", padding) + " "
+	return style.Render(cell)
 }
 
 func printSummary(instances []pkgtypes.Instance) {
@@ -190,14 +210,4 @@ func printSummary(instances []pkgtypes.Instance) {
 	}
 
 	fmt.Println(summary)
-}
-
-func truncateStr(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	if max <= 3 {
-		return s[:max]
-	}
-	return s[:max-3] + "..."
 }
