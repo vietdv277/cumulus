@@ -6,12 +6,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
 // Client wraps AWS SDK clients
 type Client struct {
-	EC2 *ec2.Client
-	ctx context.Context
+	EC2     *ec2.Client
+	SSM     *ssm.Client
+	ctx     context.Context
 	profile string
 	region  string
 }
@@ -62,6 +64,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	}
 
 	c.EC2 = ec2.NewFromConfig(cfg)
+	c.SSM = ssm.NewFromConfig(cfg)
 
 	return c, nil
 }
@@ -69,4 +72,14 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 // Context returns the client's context
 func (c *Client) Context() context.Context {
 	return c.ctx
+}
+
+// Profile returns the AWS profile
+func (c *Client) Profile() string {
+	return c.profile
+}
+
+// Region returns the AWS region
+func (c *Client) Region() string {
+	return c.region
 }
