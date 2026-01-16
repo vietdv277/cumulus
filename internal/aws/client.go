@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
@@ -13,6 +14,7 @@ import (
 type Client struct {
 	EC2     *ec2.Client
 	SSM     *ssm.Client
+	ASG     *autoscaling.Client
 	ctx     context.Context
 	profile string
 	region  string
@@ -65,6 +67,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 
 	c.EC2 = ec2.NewFromConfig(cfg)
 	c.SSM = ssm.NewFromConfig(cfg)
+	c.ASG = autoscaling.NewFromConfig(cfg)
 
 	return c, nil
 }
