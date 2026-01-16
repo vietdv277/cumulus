@@ -6,12 +6,9 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/fatih/color"
-	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/ui"
-	pkgtypes "github.com/vietdv277/cumulus/pkg/types"
 )
 
 var ec2Cmd = &cobra.Command{
@@ -108,42 +105,9 @@ func runEC2List(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print results
-	printInstanceTable(instances)
+	ui.PrintInstanceTable(instances)
 
 	return nil
-}
-
-func printInstanceTable(instances []pkgtypes.Instance) {
-	// Create styled table
-	headerFmt := color.New(color.FgGreen, color.Underline).SprintfFunc()
-	columnFmt := color.New(color.FgYellow).SprintfFunc()
-
-	tbl := table.New("ID", "Name", "Private IP", "State", "Type", "AZ", "ASG")
-	tbl.WithHeaderFormatter(headerFmt).WithFirstColumnFormatter(columnFmt)
-	tbl.WithWriter(os.Stdout)
-
-	for _, inst := range instances {
-		tbl.AddRow(
-			inst.ID,
-			truncate(inst.Name, 30),
-			inst.PrivateIP,
-			inst.State,
-			inst.Type,
-			inst.AZ,
-			truncate(inst.ASG, 25),
-		)
-	}
-
-	tbl.Print()
-	fmt.Printf("\nTotal: %d instances\n", len(instances))
-}
-
-// truncate shortens a string with ellipsis
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
 }
 
 func runEC2SSH(cmd *cobra.Command, args []string) error {
