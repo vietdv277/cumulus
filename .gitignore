@@ -29,5 +29,8 @@ cml
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# Add Claude Code local files
+.claude/
