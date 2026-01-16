@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/vietdv277/cumulus/internal/config"
 )
 
 var (
@@ -50,9 +51,13 @@ func initConfig() {
 	viper.SetEnvPrefix("CML")
 	viper.AutomaticEnv()
 
-	// Use AWS_PROFILE if --profile not specified
+	// Priority for profile: --profile flag > ~/.cml/config.yaml > AWS_PROFILE env
 	if profile == "" {
-		profile = os.Getenv("AWS_PROFILE")
+		if saved := config.GetSavedProfile(); saved != "" {
+			profile = saved
+		} else {
+			profile = os.Getenv("AWS_PROFILE")
+		}
 	}
 
 	// Use AWS_REGION if --region not specified
