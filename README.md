@@ -72,6 +72,14 @@ cml ec2 ssh
 
 # SSH with filters
 cml ec2 ssh --name api --asg production
+
+# Create SSH tunnel (port forwarding) via SSM
+cml ec2 tunnel -L 3306:3306              # Forward local port to remote port
+cml ec2 tunnel --service mysql           # Use service preset (mysql:3306)
+cml ec2 tunnel --service postgres        # PostgreSQL preset (5432)
+cml ec2 tunnel -L 8080:80 --name web     # Tunnel to filtered instance
+
+# Available service presets: mysql, postgres, redis, mongodb, ssh, http, https
 ```
 
 ### Auto Scaling Group Commands
@@ -147,6 +155,9 @@ cml ec2 ls -p production -r us-west-2
 
 # Quick SSH to a web server
 cml ec2 ssh --name web
+
+# Tunnel to MySQL on a database instance
+cml ec2 tunnel --service mysql --name db-master
 
 # Check load balancer health
 cml lb targets my-api-lb
