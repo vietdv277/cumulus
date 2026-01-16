@@ -7,14 +7,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
 // Client wraps AWS SDK clients
 type Client struct {
-	EC2     *ec2.Client
-	SSM     *ssm.Client
-	ASG     *autoscaling.Client
+	EC2   *ec2.Client
+	SSM   *ssm.Client
+	ASG   *autoscaling.Client
+	ELBv2 *elbv2.Client
 	ctx     context.Context
 	profile string
 	region  string
@@ -68,6 +70,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c.EC2 = ec2.NewFromConfig(cfg)
 	c.SSM = ssm.NewFromConfig(cfg)
 	c.ASG = autoscaling.NewFromConfig(cfg)
+	c.ELBv2 = elbv2.NewFromConfig(cfg)
 
 	return c, nil
 }
