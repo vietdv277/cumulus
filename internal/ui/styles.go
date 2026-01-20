@@ -37,6 +37,8 @@ const (
 	ColorPending = "214"
 	ColorMuted   = "240"
 	ColorHint    = "245"
+	ColorAWS     = "208" // Orange for AWS
+	ColorGCP     = "69"  // Blue for GCP
 )
 
 // Shared styles
@@ -54,6 +56,8 @@ var (
 	PendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorPending))
 	MutedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorMuted))
 	HintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorHint))
+	AWSStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAWS))
+	GCPStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorGCP))
 )
 
 // padRight pads a string to the specified display width using runewidth

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	awscmd "github.com/vietdv277/cumulus/cmd/aws"
 	"github.com/vietdv277/cumulus/internal/config"
 )
 
@@ -17,13 +18,28 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "cml",
-	Short: "Culumus - Multi-cloud CLI tool for AWS and GCP",
-	Long: `Cumulus is a command-line interface (CLI) tool designed to manage and interact with multiple cloud service providers, specifically Amazon Web Services (AWS) and Google Cloud Platform (GCP). It provides a unified interface to perform various cloud operations across these platforms.
+	Short: "Cumulus - Multi-cloud CLI tool for AWS and GCP",
+	Long: `Cumulus is a command-line interface (CLI) tool designed to manage and interact
+with multiple cloud service providers. It provides a unified, context-aware interface
+for managing cloud resources.
 
-Examples:
-  cml ec2 ls              # List running EC2 instances
-  cml ec2 ssh             # Interactive SSH via SSM
-  cml profile             # Switch AWS profile`,
+Context-Aware Commands:
+  cml use aws:prod           # Switch to AWS production context
+  cml status                 # Show current context and auth status
+  cml contexts               # List all configured contexts
+
+Unified Resource Commands:
+  cml vm list                # List VMs in current context
+  cml vm connect <name>      # SSH/SSM to a VM
+  cml vm tunnel <name> 3306  # Port forward to a VM
+
+Provider-Specific Commands:
+  cml aws ssm param list     # List SSM parameters
+  cml aws iam whoami         # Show AWS identity
+
+Legacy Commands (still available):
+  cml ec2 ls                 # List EC2 instances
+  cml profile                # Manage profiles`,
 }
 
 // Execute runs the root command.
@@ -44,6 +60,9 @@ func init() {
 	// Bind flags to viper
 	_ = viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
 	_ = viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
+
+	// Add provider-specific commands
+	rootCmd.AddCommand(awscmd.AWSCmd)
 }
 
 func initConfig() {
