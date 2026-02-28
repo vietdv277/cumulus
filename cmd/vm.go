@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
@@ -531,11 +532,9 @@ func formatProviderName(provider string) string {
 }
 
 func padRightVM(s string, width int) string {
-	if len(s) >= width {
-		if width > 3 {
-			return s[:width-3] + "..."
-		}
-		return s[:width]
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
+		return runewidth.Truncate(s, width, "...")
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-sw)
 }
