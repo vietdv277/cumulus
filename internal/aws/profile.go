@@ -110,7 +110,7 @@ func parseINIFile(path, source string, isConfigFile bool) ([]pkgtypes.AWSProfile
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var profiles []pkgtypes.AWSProfile
 	var currentProfile *pkgtypes.AWSProfile

@@ -67,9 +67,9 @@ func init() {
 
 func initConfig() {
 	// Migrate from legacy formats if needed (oldest first)
-	config.MigrateFromMacOSConfig()   // ~/Library/Application Support/cml/ → XDG path
-	config.MigrateFromOldConfig()     // ~/.cml/config.yaml → XDG path
-	config.MigrateFromDotFileConfig() // ~/.cml.yaml        → XDG path
+	_ = config.MigrateFromMacOSConfig()   // ~/Library/Application Support/cml/ → XDG path
+	_ = config.MigrateFromOldConfig()     // ~/.cml/config.yaml → XDG path
+	_ = config.MigrateFromDotFileConfig() // ~/.cml.yaml        → XDG path
 
 	// Read from environment variables
 	viper.SetEnvPrefix("CML")
