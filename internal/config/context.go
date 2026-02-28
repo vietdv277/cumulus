@@ -34,7 +34,7 @@ type Defaults struct {
 	RegionFallback string `yaml:"region_fallback,omitempty"` // Fallback region
 }
 
-// CMLConfig represents the main configuration file (~/.cml.yaml)
+// CMLConfig represents the main configuration file (~/.config/cml/config.yaml)
 type CMLConfig struct {
 	CurrentContext string                  `yaml:"current_context,omitempty"`
 	Contexts       map[string]*Context     `yaml:"contexts,omitempty"`
@@ -43,16 +43,26 @@ type CMLConfig struct {
 	Defaults       *Defaults               `yaml:"defaults,omitempty"`
 }
 
-// GetCMLConfigPath returns the config file path (~/.cml.yaml)
-func GetCMLConfigPath() string {
+// GetCMLConfigDir returns ~/.config/cml, respecting $XDG_CONFIG_HOME if set.
+// This uses the XDG convention consistently across all platforms instead of
+// os.UserConfigDir(), which returns ~/Library/Application Support on macOS.
+func GetCMLConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "cml")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".cml.yaml"
+		return filepath.Join(".config", "cml")
 	}
-	return filepath.Join(home, ".cml.yaml")
+	return filepath.Join(home, ".config", "cml")
 }
 
-// LoadCMLConfig loads the configuration from ~/.cml.yaml
+// GetCMLConfigPath returns ~/.config/cml/config.yaml (XDG-compliant)
+func GetCMLConfigPath() string {
+	return filepath.Join(GetCMLConfigDir(), "config.yaml")
+}
+
+// LoadCMLConfig loads the configuration from ~/.config/cml/config.yaml
 func LoadCMLConfig() (*CMLConfig, error) {
 	configPath := GetCMLConfigPath()
 
@@ -95,8 +105,12 @@ func LoadCMLConfig() (*CMLConfig, error) {
 	return &cfg, nil
 }
 
-// SaveCMLConfig saves the configuration to ~/.cml.yaml
+// SaveCMLConfig saves the configuration to ~/.config/cml/config.yaml
 func SaveCMLConfig(cfg *CMLConfig) error {
+	if err := os.MkdirAll(GetCMLConfigDir(), 0755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -221,7 +235,91 @@ func GetTunnelConfig(name string) (*TunnelConfig, error) {
 	return tunnel, nil
 }
 
-// MigrateFromOldConfig migrates from the old config format to the new one
+// MigrateFromMacOSConfig migrates from ~/Library/Application Support/cml/config.yaml
+// (the macOS os.UserConfigDir() path) to ~/.config/cml/config.yaml.
+// It is a no-op if the old file doesn't exist or the new file already exists.
+func MigrateFromMacOSConfig() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	oldPath := filepath.Join(home, "Library", "Application Support", "cml", "config.yaml")
+
+	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	newPath := GetCMLConfigPath()
+
+	// New file already exists; leave both alone
+	if _, err := os.Stat(newPath); err == nil {
+		return nil
+	}
+
+	if err := os.MkdirAll(GetCMLConfigDir(), 0755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+
+	data, err := os.ReadFile(oldPath)
+	if err != nil {
+		return fmt.Errorf("read macOS config: %w", err)
+	}
+	if err := os.WriteFile(newPath, data, 0644); err != nil {
+		return fmt.Errorf("write migrated config: %w", err)
+	}
+
+	if err := os.Remove(oldPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not remove legacy macOS config %s: %v\n", oldPath, err)
+	}
+
+	return nil
+}
+
+// MigrateFromDotFileConfig migrates from ~/.cml.yaml to ~/.config/cml/config.yaml.
+// It is a no-op if the old file doesn't exist or the new file already exists.
+func MigrateFromDotFileConfig() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	oldPath := filepath.Join(home, ".cml.yaml")
+
+	// No old file to migrate
+	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	newPath := GetCMLConfigPath()
+
+	// New file already exists; leave both alone
+	if _, err := os.Stat(newPath); err == nil {
+		return nil
+	}
+
+	// Ensure destination directory exists
+	if err := os.MkdirAll(GetCMLConfigDir(), 0755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+
+	// Raw byte copy to preserve comments/formatting
+	data, err := os.ReadFile(oldPath)
+	if err != nil {
+		return fmt.Errorf("read legacy config: %w", err)
+	}
+	if err := os.WriteFile(newPath, data, 0644); err != nil {
+		return fmt.Errorf("write migrated config: %w", err)
+	}
+
+	// Remove old file; warn but don't fail if removal fails
+	if err := os.Remove(oldPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not remove legacy config %s: %v\n", oldPath, err)
+	}
+
+	return nil
+}
+
+// MigrateFromOldConfig migrates from the old ~/.cml/config.yaml format to the new
+// ~/.config/cml/config.yaml format. SaveCMLConfig writes to the XDG path automatically.
 func MigrateFromOldConfig() error {
 	oldCfg, err := LoadConfig()
 	if err != nil {
@@ -259,5 +357,15 @@ func MigrateFromOldConfig() error {
 		}
 	}
 
-	return SaveCMLConfig(newCfg)
+	if err := SaveCMLConfig(newCfg); err != nil {
+		return err
+	}
+
+	// Remove old file so this migration doesn't re-run on every invocation
+	oldPath := GetConfigPath()
+	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Warning: could not remove legacy config %s: %v\n", oldPath, err)
+	}
+
+	return nil
 }

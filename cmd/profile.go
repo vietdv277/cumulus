@@ -39,7 +39,7 @@ var profileSetCmd = &cobra.Command{
 	Short: "Set the active AWS profile",
 	Long: `Set a specific AWS profile as active.
 
-The profile will be saved to ~/.cml/config.yaml and used by future cml commands.
+The profile will be saved to ~/.config/cml/config.yaml and used by future cml commands.
 
 Examples:
   cml profile set my-profile

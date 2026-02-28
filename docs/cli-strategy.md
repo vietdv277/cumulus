@@ -186,7 +186,7 @@ cml gcp iam test-permissions <resource>
 
 ### Config File Location
 
-```
+```bash
 ~/.cml.yaml
 ```
 
