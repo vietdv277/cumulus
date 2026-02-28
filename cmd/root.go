@@ -66,11 +66,16 @@ func init() {
 }
 
 func initConfig() {
+	// Migrate from legacy formats if needed (oldest first)
+	config.MigrateFromMacOSConfig()   // ~/Library/Application Support/cml/ → XDG path
+	config.MigrateFromOldConfig()     // ~/.cml/config.yaml → XDG path
+	config.MigrateFromDotFileConfig() // ~/.cml.yaml        → XDG path
+
 	// Read from environment variables
 	viper.SetEnvPrefix("CML")
 	viper.AutomaticEnv()
 
-	// Priority for profile: --profile flag > ~/.cml/config.yaml > AWS_PROFILE env
+	// Priority for profile: --profile flag > ~/.config/cml/config.yaml > AWS_PROFILE env
 	if profile == "" {
 		if saved := config.GetSavedProfile(); saved != "" {
 			profile = saved
