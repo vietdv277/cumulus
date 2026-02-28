@@ -35,6 +35,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("Current Status")
 	fmt.Println(ui.MutedStyle.Render("─────────────────────────────────"))
 	fmt.Println()
+	fmt.Printf("Config:   %s\n", ui.MutedStyle.Render(config.GetCMLConfigPath()))
+	fmt.Println()
 
 	if ctx == nil {
 		fmt.Println("Context:  " + ui.MutedStyle.Render("(not set)"))
