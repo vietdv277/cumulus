@@ -40,6 +40,9 @@ cml status
 
 # List all configured contexts
 cml contexts
+
+# Interactive context switcher (like kubectx)
+cml ctx -i
 ```
 
 ### Example Workflow
@@ -92,7 +95,9 @@ cml vm list -c gcp:prod
 
 ```bash
 cml vm list [flags]
-  -i, --interactive       Interactive selection mode
+  -i, --interactive       Interactive TUI selection mode
+                          Type to filter · ↑↓ navigate · Enter:connect
+                          Ctrl+S:start · Ctrl+X:stop · Esc:quit
   -s, --state <state>     Filter by state (running, stopped)
   -t, --tag <key=value>   Filter by tag
   -o, --output <format>   Output format (table, json, yaml)
@@ -187,12 +192,16 @@ cml gcp iam test-permissions <resource>
 ### Config File Location
 
 ```bash
-~/.cml.yaml
+~/.config/cml/config.yaml   # XDG-compliant (respects $XDG_CONFIG_HOME)
 ```
+
+Legacy paths (`~/.cml.yaml`, `~/.cml/config.yaml`, `~/Library/Application Support/cml/config.yaml`) are auto-migrated on first run.
 
 ### Config Structure
 
 ```yaml
+# ~/.config/cml/config.yaml
+
 # Current active context
 current_context: aws:prod
 
@@ -476,7 +485,7 @@ SecretValue
 - [x] AWS EC2 implementation
 - [ ] GCP GCE implementation
 - [x] `vm list` with table output
-- [ ] `vm list -i` interactive mode
+- [x] `vm list -i` interactive TUI mode (bubbletea — connect/start/stop)
 - [x] `vm connect` (SSM / gcloud SSH) - SSM done
 - [x] `vm tunnel` (port forwarding)
 - [x] `vm start/stop/reboot`
@@ -521,12 +530,10 @@ SecretValue
 | CLI framework | `github.com/spf13/cobra` |
 | Config management | `github.com/spf13/viper` |
 | AWS SDK | `github.com/aws/aws-sdk-go-v2` |
-| GCP SDK | `cloud.google.com/go` |
-| Interactive prompts | `github.com/manifoldco/promptui` |
-| Fuzzy finder | `github.com/ktr0731/go-fuzzyfinder` |
-| Table output | `github.com/olekukonko/tablewriter` |
-| Spinner | `github.com/briandowns/spinner` |
-| Colors | `github.com/fatih/color` |
+| GCP SDK | `cloud.google.com/go` _(planned)_ |
+| TUI framework | `github.com/charmbracelet/bubbletea` |
+| TUI styling | `github.com/charmbracelet/lipgloss` |
+| Unicode display width | `github.com/mattn/go-runewidth` |
 
 ---
 
@@ -571,16 +578,29 @@ All list commands support:
 
 ## Interactive Mode
 
-Commands with `-i` or `--interactive` flag enable:
+Commands with `-i` / `--interactive` open a bubbletea TUI with:
 
-- Fuzzy search through results
-- Multi-select where applicable
-- Preview pane with details
-- Keyboard navigation
+- Search/filter by typing (all printable characters go to search)
+- Arrow key navigation with scrolling
+- Details panel for the highlighted item
+- Status bar with count and key hints
 
-Example:
+### Key Bindings
+
+| Command | Key | Action |
+|---------|-----|--------|
+| All | `↑` / `↓` | Navigate list |
+| All | Type | Filter results |
+| All | `Backspace` | Delete last search character |
+| All | `Esc` / `Ctrl+C` | Quit without action |
+| `vm list -i` | `Enter` | Connect to VM via SSM |
+| `vm list -i` | `Ctrl+S` | Start VM |
+| `vm list -i` | `Ctrl+X` | Stop VM |
+| `ctx -i` | `Enter` | Switch to selected context |
+
+### Implemented
 
 ```bash
-cml vm list -i
-# Opens fuzzy finder, select VM, then choose action
+cml vm list -i     # Search VMs, then connect / start / stop
+cml ctx -i         # Search contexts and switch (like kubectx)
 ```
