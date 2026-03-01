@@ -122,10 +122,11 @@ Examples:
 }
 
 var (
-	vmListState   string
-	vmListName    string
-	vmListTags    []string
-	vmContextFlag string
+	vmListState       string
+	vmListName        string
+	vmListTags        []string
+	vmListInteractive bool
+	vmContextFlag     string
 )
 
 func init() {
@@ -142,6 +143,7 @@ func init() {
 	vmListCmd.Flags().StringVarP(&vmListState, "state", "s", "", "Filter by state (running, stopped, all)")
 	vmListCmd.Flags().StringVar(&vmListName, "name", "", "Filter by name pattern")
 	vmListCmd.Flags().StringArrayVarP(&vmListTags, "tag", "t", nil, "Filter by tag (key=value)")
+	vmListCmd.Flags().BoolVarP(&vmListInteractive, "interactive", "i", false, "Interactive selection mode")
 
 	// Global context override
 	vmCmd.PersistentFlags().StringVarP(&vmContextFlag, "context", "c", "", "Use specific context")
@@ -236,6 +238,29 @@ func runVMList(cmd *cobra.Command, args []string) error {
 
 	if len(vms) == 0 {
 		fmt.Println("No VMs found")
+		return nil
+	}
+
+	if vmListInteractive {
+		vm, action, err := ui.SelectVM(vms)
+		if err != nil {
+			return nil // cancelled — silent exit
+		}
+		switch action {
+		case ui.VMActionConnect:
+			fmt.Printf("Connecting to %s...\n", vm.Name)
+			return vmProvider.Connect(ctx, vm.ID)
+		case ui.VMActionStart:
+			if err := vmProvider.Start(ctx, vm.ID); err != nil {
+				return err
+			}
+			fmt.Printf("Starting VM: %s\n", vm.Name)
+		case ui.VMActionStop:
+			if err := vmProvider.Stop(ctx, vm.ID); err != nil {
+				return err
+			}
+			fmt.Printf("Stopping VM: %s\n", vm.Name)
+		}
 		return nil
 	}
 
