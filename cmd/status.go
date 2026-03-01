@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
 
@@ -94,15 +94,25 @@ func displayGCPStatus(ctx *config.Context) {
 	}
 	fmt.Println()
 
-	// Check for gcloud auth
 	fmt.Print("Auth:     ")
-	if _, err := os.Stat(os.Getenv("HOME") + "/.config/gcloud/application_default_credentials.json"); err == nil {
-		fmt.Println(ui.RunningStyle.Render("✓ Application default credentials found"))
-	} else {
-		fmt.Println(ui.PendingStyle.Render("? Credentials not verified"))
+	identity, err := gcp.GetCallerIdentity(ctx.Project, ctx.Region)
+	if err != nil {
+		fmt.Println(ui.StoppedStyle.Render("✗ Not authenticated"))
+		fmt.Printf("          %s\n", ui.MutedStyle.Render(err.Error()))
 		fmt.Println()
 		fmt.Println("To authenticate:")
 		fmt.Println("  gcloud auth application-default login")
+	} else {
+		fmt.Println(ui.RunningStyle.Render("✓ Authenticated (ADC)"))
+		if identity.Email != "" {
+			fmt.Printf("Account:  %s\n", identity.Email)
+		}
+		if identity.ProjectID != "" {
+			fmt.Printf("Project:  %s\n", identity.ProjectID)
+		}
+		if identity.TokenType != "" {
+			fmt.Printf("Type:     %s\n", ui.MutedStyle.Render(identity.TokenType))
+		}
 	}
 }
 
