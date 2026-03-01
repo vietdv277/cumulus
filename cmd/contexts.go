@@ -25,8 +25,11 @@ Examples:
 	RunE: runContexts,
 }
 
+var ctxInteractive bool
+
 func init() {
 	rootCmd.AddCommand(contextsCmd)
+	contextsCmd.Flags().BoolVarP(&ctxInteractive, "interactive", "i", false, "Interactive selection mode")
 }
 
 func runContexts(cmd *cobra.Command, args []string) error {
@@ -41,6 +44,22 @@ func runContexts(cmd *cobra.Command, args []string) error {
 		fmt.Println("Add a context with:")
 		fmt.Println("  cml use add aws:prod --profile <profile> --region <region>")
 		fmt.Println("  cml use add gcp:prod --project <project-id> --region <region>")
+		return nil
+	}
+
+	if ctxInteractive {
+		selected, err := ui.SelectContext(contexts, current)
+		if err != nil {
+			return nil // cancelled — silent exit
+		}
+		if selected == current {
+			fmt.Printf("Already on context: %s\n", selected)
+			return nil
+		}
+		if err := config.SetCurrentContext(selected); err != nil {
+			return err
+		}
+		fmt.Printf("Switched to context: %s\n", selected)
 		return nil
 	}
 
