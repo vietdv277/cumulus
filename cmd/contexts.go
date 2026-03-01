@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 	"github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/ui"
@@ -50,52 +51,70 @@ func runContexts(cmd *cobra.Command, args []string) error {
 	}
 	sort.Strings(names)
 
+	// Compute column widths from actual content
+	w0 := runewidth.StringWidth("CONTEXT")
+	w1 := runewidth.StringWidth("PROVIDER")
+	w2 := runewidth.StringWidth("PROFILE/PROJECT")
+	w3 := runewidth.StringWidth("REGION")
+	for _, name := range names {
+		ctx := contexts[name]
+		cred := ctx.Profile
+		if ctx.Project != "" {
+			cred = ctx.Project
+		}
+		region := ctx.Region
+		if region == "" {
+			region = "-"
+		}
+		w0 = max(w0, runewidth.StringWidth(name))
+		w1 = max(w1, runewidth.StringWidth(strings.ToUpper(ctx.Provider)))
+		w2 = max(w2, runewidth.StringWidth(cred))
+		w3 = max(w3, runewidth.StringWidth(region))
+	}
+
 	// Print header
 	fmt.Println()
-	fmt.Printf("  %-20s  %-8s  %-20s  %-20s\n",
-		ui.HeaderStyle.Render("CONTEXT"),
-		ui.HeaderStyle.Render("PROVIDER"),
-		ui.HeaderStyle.Render("PROFILE/PROJECT"),
+	fmt.Printf("  %s  %s  %s  %s\n",
+		padCtxCol(ui.HeaderStyle.Render("CONTEXT"), "CONTEXT", w0),
+		padCtxCol(ui.HeaderStyle.Render("PROVIDER"), "PROVIDER", w1),
+		padCtxCol(ui.HeaderStyle.Render("PROFILE/PROJECT"), "PROFILE/PROJECT", w2),
 		ui.HeaderStyle.Render("REGION"))
-	fmt.Println(ui.MutedStyle.Render("  " + strings.Repeat("─", 75)))
+	fmt.Println(ui.MutedStyle.Render("  " + strings.Repeat("─", w0+2+w1+2+w2+2+w3)))
 
 	// Print contexts
 	for _, name := range names {
 		ctx := contexts[name]
 
-		// Marker for current context
 		marker := "  "
 		if name == current {
 			marker = "* "
 		}
 
-		// Format provider
-		providerStr := formatProviderShort(ctx.Provider)
+		providerPlain := strings.ToUpper(ctx.Provider)
+		providerStyled := formatProviderShort(ctx.Provider)
 
-		// Get profile/project
-		credential := ctx.Profile
+		cred := ctx.Profile
 		if ctx.Project != "" {
-			credential = ctx.Project
+			cred = ctx.Project
 		}
 
-		// Format region
 		region := ctx.Region
+		regionStyled := region
 		if region == "" {
-			region = ui.MutedStyle.Render("-")
+			regionStyled = ui.MutedStyle.Render("-")
 		}
 
-		// Format name with marker
-		nameStr := name
+		nameStyled := name
 		if name == current {
-			nameStr = ui.RunningStyle.Render(name)
+			nameStyled = ui.RunningStyle.Render(name)
 		}
 
-		fmt.Printf("%s%-20s  %-8s  %-20s  %-20s\n",
+		fmt.Printf("%s%s  %s  %s  %s\n",
 			marker,
-			nameStr,
-			providerStr,
-			credential,
-			region)
+			padCtxCol(nameStyled, name, w0),
+			padCtxCol(providerStyled, providerPlain, w1),
+			padRightVM(cred, w2),
+			regionStyled)
 	}
 
 	fmt.Println()
@@ -106,6 +125,15 @@ func runContexts(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	return nil
+}
+
+// padCtxCol pads a styled string to the given display width using the plain text width.
+func padCtxCol(styled, plain string, width int) string {
+	pw := runewidth.StringWidth(plain)
+	if pw >= width {
+		return styled
+	}
+	return styled + strings.Repeat(" ", width-pw)
 }
 
 func formatProviderShort(provider string) string {
