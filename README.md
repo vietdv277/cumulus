@@ -1,261 +1,317 @@
 # Cumulus (cml)
 
-A fast, intuitive CLI for AWS cloud management. Simplify complex AWS commands into memorable, discoverable operations with interactive selectors and beautiful output.
+A fast, intuitive CLI for multi-cloud resource management (AWS + GCP). Manage EC2 and GCE instances, secrets, and more through a unified, context-aware interface with interactive selectors and clean output.
 
 ## Why Cumulus?
 
 ```bash
-# Before (AWS CLI)
+# Before
 aws ec2 describe-instances --filters "Name=instance-state-name,Values=running" \
   --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name'].Value|[0]]" --output table
 
-# After (Cumulus)
-cml ec2 ls
+# After
+cml vm list
 ```
 
 ## Features
 
-- **Intuitive Commands**: Simple, memorable command structure
-- **Interactive Selectors**: No need to memorize IDs - just select from a list
-- **Beautiful Output**: Styled tables with color-coded status indicators
-- **Profile Support**: Easy switching between AWS profiles and regions
-- **Unified Experience**: Consistent UX across all AWS services
+- **Multi-cloud** — AWS and GCP in one tool; same commands, same UX
+- **Context system** — switch between environments with `cml use <context>`
+- **Unified VM management** — list, connect, tunnel, start/stop/reboot across providers
+- **Interactive selectors** — pick instances from a filterable TUI without memorizing IDs
+- **GCP bastion / IAP** — connect to private GCE instances through a bastion with optional IAP tunneling
+- **Unified secrets** — AWS SSM Parameter Store, Secrets Manager, and GCP Secret Manager behind one command
+- **Beautiful output** — styled tables with color-coded state indicators
 
 ## Installation
 
-### From Source
+### Pre-built binaries (recommended)
+
+Download the latest release from the [releases page](https://github.com/vietdv277/cumulus/releases/latest).
+
+**macOS (Apple Silicon)**
 
 ```bash
-# Clone the repository
-git clone https://github.com/vietdv277/cumulus.git
-cd cumulus
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-darwin-arm64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
 
-# Build
-go build -o cml .
+**macOS (Intel)**
 
-# Move to PATH (optional)
-sudo mv cml /usr/local/bin/
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-darwin-amd64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**Linux (amd64)**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-linux-amd64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**Linux (arm64)**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-linux-arm64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**Windows (amd64)**
+
+Download [`cml-windows-amd64.exe`](https://github.com/vietdv277/cumulus/releases/latest/download/cml-windows-amd64.exe), rename it to `cml.exe`, and add it to a directory on your `PATH`.
+
+**Verify checksum**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/checksums.txt -o checksums.txt
+sha256sum --check --ignore-missing checksums.txt
 ```
 
 ### Prerequisites
 
-- Go 1.23 or later
-- AWS CLI configured with credentials
-- AWS Session Manager plugin (for `ec2 ssh` command)
+- **AWS**: credentials configured (`~/.aws/credentials` or environment variables), [AWS Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for `vm connect`
+- **GCP**: `gcloud` CLI installed and authenticated (`gcloud auth application-default login`)
 
-## Usage
+### From source
 
-### Global Flags
+> Requires Go 1.25+
 
 ```bash
-cml [command] -p, --profile string   # AWS profile to use
-cml [command] -r, --region string    # AWS region to use
+git clone https://github.com/vietdv277/cumulus.git
+cd cumulus
+make install        # builds and copies to $GOPATH/bin
 ```
 
-### EC2 Commands
+Or build manually:
 
 ```bash
-# List running EC2 instances
-cml ec2 ls
-
-# List all instances (including stopped)
-cml ec2 ls --all
-
-# Filter by name pattern
-cml ec2 ls --name web-server
-
-# Filter by Auto Scaling Group
-cml ec2 ls --asg my-asg
-
-# Start interactive SSM session
-cml ec2 ssh
-
-# SSH with filters
-cml ec2 ssh --name api --asg production
+make build          # produces ./cml
+sudo mv cml /usr/local/bin/
 ```
 
-### Auto Scaling Group Commands
+## Quick start
 
 ```bash
-# List all ASGs
+# 1. Add contexts for each environment
+cml use add aws:prod  --profile prod-sso  --region us-east-1
+cml use add gcp:prod  --project my-project --region asia-southeast1
+
+# 2. Switch to a context
+cml use aws:prod
+
+# 3. Start using it
+cml vm list
+cml vm connect web-01
+```
+
+## Context management
+
+Contexts store the provider, credentials reference, and region so you never have to repeat them.
+
+```bash
+# Switch active context
+cml use aws:prod
+cml use gcp:staging
+
+# Add a new context
+cml use add aws:dev  --profile dev --region eu-west-1
+cml use add gcp:dev  --project dev-project --region europe-west1
+
+# Update individual fields without replacing the whole context
+cml use update aws:prod --region us-west-2
+cml use update gcp:prod --bastion bastion-host --bastion-project infra-proj \
+    --bastion-zone asia-southeast1-b --bastion-iap
+
+# Remove the bastion from a context
+cml use update gcp:prod --bastion ""
+
+# Delete a context
+cml use delete aws:old-env
+
+# List all contexts
+cml ctx                   # or: cml contexts
+cml ctx -i                # interactive selector
+
+# Show current context and auth status
+cml status
+```
+
+### Context config
+
+Stored at `~/.config/cml/config.yaml`:
+
+```yaml
+current_context: aws:prod
+contexts:
+  aws:prod:
+    provider: aws
+    profile: prod-sso
+    region: us-east-1
+  gcp:prod:
+    provider: gcp
+    project: my-project
+    region: asia-southeast1
+    bastion: bastion-host
+    bastion_project: infra-project
+    bastion_zone: asia-southeast1-b
+    bastion_iap: true
+```
+
+## VM commands
+
+All `vm` subcommands operate in the current context. Pass `--context <name>` to target a different one without switching.
+
+```bash
+# List running VMs (default)
+cml vm list
+cml vm list -s all              # include stopped
+cml vm list -s stopped
+cml vm list --name web          # filter by name pattern
+cml vm list -t env=prod         # filter by label/tag
+cml vm list -i                  # interactive TUI selector
+
+# Get details for a specific VM
+cml vm get web-01
+
+# SSH (AWS: SSM session) / gcloud compute ssh (GCP)
+cml vm connect web-01
+
+# Port forwarding
+cml vm tunnel db-01 5432            # forward local 5432 → remote 5432
+cml vm tunnel db-01 5432 15432      # forward local 15432 → remote 5432
+
+# Lifecycle
+cml vm start  web-01
+cml vm stop   web-01
+cml vm reboot web-01
+```
+
+### GCP bastion tunneling
+
+When a bastion is configured on a GCP context, `vm connect` and `vm tunnel` automatically route through it:
+
+```bash
+cml use update gcp:prod \
+  --bastion bastion-host \
+  --bastion-project infra-project \
+  --bastion-zone asia-southeast1-b \
+  --bastion-iap
+
+cml vm connect my-private-instance  # → gcloud ssh to bastion, then ssh <private-ip>
+cml vm tunnel  my-private-instance 5432  # → SSH tunnel via bastion
+```
+
+## Secrets
+
+```bash
+# AWS: aggregates SSM Parameter Store (/prefix) and Secrets Manager
+# GCP: Secret Manager
+
+cml secrets list                        # list all secrets
+cml secrets list /app/                  # filter by prefix
+cml secrets get  /app/db-password       # get value
+cml secrets set  /app/db-password s3cr3t  # create or update
+cml secrets delete /app/old-param       # delete
+```
+
+## AWS-specific commands
+
+```bash
+# SSM Parameter Store
+cml aws ssm param list
+cml aws ssm param get  /my/param
+cml aws ssm param set  /my/param value
+
+# IAM identity
+cml aws iam whoami
+```
+
+## Legacy commands
+
+These predated the context system and are still available:
+
+```bash
+cml ec2 ls                          # list EC2 instances
+cml ec2 ls --all                    # include stopped
+cml ec2 ls --name web --asg my-asg  # filter
+cml ec2 ssh                         # interactive SSM session (TUI)
+
 cml asg ls
+cml asg describe [name]
+cml asg instances [name]
+cml asg scale    [name] --desired 3
 
-# Describe an ASG (interactive selector if no name)
-cml asg describe [asg-name]
-
-# List instances in an ASG
-cml asg instances [asg-name]
-
-# Scale an ASG
-cml asg scale [asg-name] --desired 3
-```
-
-### VPC Commands
-
-```bash
-# List all VPCs
 cml vpc ls
+cml vpc describe [id]
+cml vpc subnets  [id]
 
-# Describe a VPC with subnets (interactive selector if no ID)
-cml vpc describe [vpc-id]
-
-# List subnets in a VPC
-cml vpc subnets [vpc-id]
-```
-
-### Load Balancer Commands
-
-```bash
-# List all load balancers (ALB/NLB)
 cml lb ls
-
-# Describe a load balancer with listeners and target groups
 cml lb describe [name]
+cml lb targets  [name]
 
-# List targets with health status
-cml lb targets [name]
-```
-
-### Profile Management
-
-```bash
-# List available AWS profiles
 cml profile ls
-
-# Switch to a different profile
-cml profile use [profile-name]
-
-# Show current profile
+cml profile use [name]
 cml profile current
 ```
 
-### Other Commands
+## Build & test
 
 ```bash
-# Show version
-cml version
-
-# Generate shell completion
-cml completion bash    # or zsh, fish, powershell
+make build          # build with version metadata injected
+make run ARGS="vm list"
+make test
+make test-cover     # test + HTML coverage report
+make all            # fmt + vet + test + build
+make install        # install to $GOPATH/bin
 ```
 
-## Examples
-
-```bash
-# Use production profile in us-west-2
-cml ec2 ls -p production -r us-west-2
-
-# Quick SSH to a web server
-cml ec2 ssh --name web
-
-# Check load balancer health
-cml lb targets my-api-lb
-
-# View VPC networking
-cml vpc describe vpc-12345678
-```
-
-## Build & Test
-
-### Build
-
-```bash
-# Build binary
-go build -o cml .
-
-# Build with version info
-go build -ldflags "-X main.version=1.0.0" -o cml .
-```
-
-### Test
-
-```bash
-# Run all tests
-go test -v ./...
-
-# Run tests with coverage
-go test -cover ./...
-
-# Run specific package tests
-go test -v ./internal/aws/...
-```
-
-### Development
-
-```bash
-# Download dependencies
-go mod download
-
-# Tidy dependencies
-go mod tidy
-
-# Run linter (if installed)
-golangci-lint run
-
-# Build and run
-go build -o cml . && ./cml --help
-```
-
-## Project Structure
+## Project structure
 
 ```
 cumulus/
 ├── cmd/                    # Cobra command definitions
 │   ├── root.go
-│   ├── ec2.go
+│   ├── vm.go               # context-aware VM commands
+│   ├── secrets.go          # context-aware secrets commands
+│   ├── use.go              # context management
+│   ├── status.go
+│   ├── contexts.go
+│   ├── ec2.go              # legacy AWS EC2
 │   ├── asg.go
 │   ├── vpc.go
 │   ├── lb.go
 │   └── profile.go
 ├── internal/
-│   ├── aws/                # AWS SDK client and services
-│   │   ├── client.go
-│   │   ├── ec2.go
-│   │   ├── asg.go
-│   │   ├── vpc.go
-│   │   └── lb.go
-│   ├── ui/                 # Interactive UI components
-│   │   ├── selector.go
-│   │   ├── table.go
-│   │   └── styles.go
-│   └── config/             # Configuration management
-├── pkg/types/              # Shared type definitions
+│   ├── aws/                # AWS client and provider implementations
+│   ├── gcp/                # GCP client and GCE provider implementations
+│   ├── ui/                 # bubbletea TUI components (selectors, tables)
+│   └── config/             # context config (load, save, migrate)
+├── pkg/
+│   ├── provider/           # VMProvider, SecretsProvider interfaces
+│   └── types/              # shared domain types (VM, Secret, …)
 ├── main.go
 └── go.mod
-```
-
-## Configuration
-
-Cumulus uses your existing AWS CLI configuration:
-
-- `~/.aws/credentials` - AWS credentials
-- `~/.aws/config` - AWS profiles and regions
-
-### Environment Variables
-
-```bash
-AWS_PROFILE=production     # Default AWS profile
-AWS_REGION=us-east-1       # Default AWS region
 ```
 
 ## Dependencies
 
 | Library | Purpose |
 |---------|---------|
-| [cobra](https://github.com/spf13/cobra) | CLI framework |
-| [viper](https://github.com/spf13/viper) | Configuration |
+| [cobra](https://github.com/spf13/cobra) + [viper](https://github.com/spf13/viper) | CLI framework and config |
 | [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) | AWS SDK |
+| [cloud.google.com/go/compute](https://pkg.go.dev/cloud.google.com/go/compute) | GCE SDK |
+| [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) | GCP auth and APIs |
 | [bubbletea](https://github.com/charmbracelet/bubbletea) | Interactive TUI |
 | [lipgloss](https://github.com/charmbracelet/lipgloss) | Styled output |
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feat/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Commit your changes (`git commit -m 'feat: add my feature'`)
+4. Push and open a Pull Request
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE) for details.
