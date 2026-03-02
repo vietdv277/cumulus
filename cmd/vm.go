@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
+	gcpinternal "github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -191,7 +192,22 @@ func getVMProvider(ctx context.Context) (provider.VMProvider, error) {
 		return aws.NewVMProvider(client, ctxConfig.Profile, ctxConfig.Region), nil
 
 	case "gcp":
-		return nil, fmt.Errorf("GCP VM provider not yet implemented")
+		opts := []gcpinternal.Option{
+			gcpinternal.WithProject(ctxConfig.Project),
+			gcpinternal.WithRegion(ctxConfig.Region),
+		}
+		if ctxConfig.Bastion != "" {
+			opts = append(opts,
+				gcpinternal.WithBastion(ctxConfig.Bastion, ctxConfig.BastionZone),
+				gcpinternal.WithBastionProject(ctxConfig.BastionProject),
+				gcpinternal.WithBastionIAP(ctxConfig.BastionIAP),
+			)
+		}
+		gcpClient, err := gcpinternal.NewClient(ctx, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GCP client: %w", err)
+		}
+		return gcpinternal.NewVMProvider(gcpClient), nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
@@ -492,7 +508,11 @@ func printVMDetails(vm *types.VM) {
 		fmt.Printf("  Public IP:  %s\n", vm.PublicIP)
 	}
 	if vm.ASG != "" {
-		fmt.Printf("  ASG:        %s\n", vm.ASG)
+		label := "ASG"
+		if vm.Provider == "gcp" {
+			label = "IG "
+		}
+		fmt.Printf("  %s:        %s\n", label, vm.ASG)
 	}
 	fmt.Printf("  Launched:   %s\n", vm.LaunchedAt.Format("2006-01-02 15:04:05"))
 	fmt.Printf("  Provider:   %s\n", formatProviderName(vm.Provider))

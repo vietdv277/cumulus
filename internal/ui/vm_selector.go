@@ -351,6 +351,11 @@ func (m VMModel) renderVMDetailsPanel() string {
 		stateDisplay = "◐ " + stateStr
 	}
 
+	igLabel := "ASG:"
+	if vm.Provider == "gcp" {
+		igLabel = "IG:"
+	}
+
 	details := []struct {
 		label string
 		value string
@@ -363,7 +368,7 @@ func (m VMModel) renderVMDetailsPanel() string {
 		{"Zone:", vm.Zone, AZStyle},
 		{"Private IP:", vm.PrivateIP, IPStyle},
 		{"Public IP:", formatOptional(vm.PublicIP), IPStyle},
-		{"ASG:", formatOptional(vm.ASG), ASGStyle},
+		{igLabel, formatOptional(vm.ASG), ASGStyle},
 		{"Launched:", vm.LaunchedAt.Format("2006-01-02 15:04:05"), MutedStyle},
 		{"Provider:", vm.Provider, vmProviderStyle(vm.Provider)},
 	}
