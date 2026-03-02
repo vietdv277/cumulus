@@ -25,13 +25,57 @@ cml vm list
 
 ## Installation
 
+### Pre-built binaries (recommended)
+
+Download the latest release from the [releases page](https://github.com/vietdv277/cumulus/releases/latest).
+
+**macOS (Apple Silicon)**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-darwin-arm64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**macOS (Intel)**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-darwin-amd64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**Linux (amd64)**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-linux-amd64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**Linux (arm64)**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/cml-linux-arm64 -o cml
+chmod +x cml && sudo mv cml /usr/local/bin/
+```
+
+**Windows (amd64)**
+
+Download [`cml-windows-amd64.exe`](https://github.com/vietdv277/cumulus/releases/latest/download/cml-windows-amd64.exe), rename it to `cml.exe`, and add it to a directory on your `PATH`.
+
+**Verify checksum**
+
+```bash
+curl -L https://github.com/vietdv277/cumulus/releases/latest/download/checksums.txt -o checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+```
+
 ### Prerequisites
 
-- Go 1.25+
 - **AWS**: credentials configured (`~/.aws/credentials` or environment variables), [AWS Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for `vm connect`
 - **GCP**: `gcloud` CLI installed and authenticated (`gcloud auth application-default login`)
 
 ### From source
+
+> Requires Go 1.25+
 
 ```bash
 git clone https://github.com/vietdv277/cumulus.git
