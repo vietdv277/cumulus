@@ -13,10 +13,14 @@ const scopeCloudPlatform = "https://www.googleapis.com/auth/cloud-platform"
 // It is the entry point for all GCP operations and holds Application Default
 // Credentials loaded via google.FindDefaultCredentials.
 type Client struct {
-	credentials *google.Credentials
-	project     string
-	region      string
-	ctx         context.Context
+	credentials    *google.Credentials
+	project        string
+	region         string
+	ctx            context.Context
+	bastion        string
+	bastionProject string
+	bastionZone    string
+	bastionIAP     bool
 }
 
 // Option is a functional option for configuring a Client.
@@ -34,6 +38,25 @@ func WithRegion(region string) Option {
 	return func(c *Client) {
 		c.region = region
 	}
+}
+
+// WithBastion sets the bastion instance name and zone.
+func WithBastion(name, zone string) Option {
+	return func(c *Client) {
+		c.bastion = name
+		c.bastionZone = zone
+	}
+}
+
+// WithBastionProject sets the GCP project that hosts the bastion.
+// Defaults to the VM project if not set.
+func WithBastionProject(project string) Option {
+	return func(c *Client) { c.bastionProject = project }
+}
+
+// WithBastionIAP enables --tunnel-through-iap for bastion connections.
+func WithBastionIAP(iap bool) Option {
+	return func(c *Client) { c.bastionIAP = iap }
 }
 
 // NewClient creates a new GCP client using Application Default Credentials (ADC).
@@ -88,3 +111,15 @@ func (c *Client) Credentials() *google.Credentials {
 func (c *Client) Context() context.Context {
 	return c.ctx
 }
+
+// Bastion returns the configured bastion instance name.
+func (c *Client) Bastion() string { return c.bastion }
+
+// BastionProject returns the GCP project that hosts the bastion.
+func (c *Client) BastionProject() string { return c.bastionProject }
+
+// BastionZone returns the zone of the bastion instance.
+func (c *Client) BastionZone() string { return c.bastionZone }
+
+// BastionIAP reports whether --tunnel-through-iap is enabled for bastion access.
+func (c *Client) BastionIAP() bool { return c.bastionIAP }

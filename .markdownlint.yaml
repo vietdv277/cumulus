@@ -1,0 +1,74 @@
+# markdownlint configuration
+# Rules reference: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# Enable all rules by default, then selectively override below
+default: true
+
+# MD013 / line-length
+# 120 chars is generous enough for CLI docs; skip code blocks and tables
+# where long command examples and aligned columns are unavoidable
+MD013:
+  line_length: 120
+  code_blocks: false
+  tables: false
+  headings: false
+
+# MD024 / no-duplicate-heading
+# Allow the same heading text at different nesting levels (e.g., multiple
+# "Examples" or "Description" sections in separate top-level sections)
+MD024:
+  siblings_only: true
+
+# MD035 / hr-style
+# Enforce "---" consistently; the project already uses this style
+MD035:
+  style: "---"
+
+# MD041 / first-line-heading
+# Disabled: GitHub issue/PR templates intentionally begin with H2, not H1
+MD041: false
+
+# MD044 / proper-names
+# Catch mis-cased technology names in prose (skips code blocks and spans)
+MD044:
+  names:
+    - AWS
+    - GCP
+    - GitHub
+    - Go
+    - API
+    - CLI
+    - TUI
+    - SSH
+    - SSM
+    - EC2
+    - IAM
+    - VPC
+    - SSO
+    - EKS
+    - GKE
+    - RDS
+    - ALB
+    - NLB
+  code_blocks: false
+  html_elements: false
+
+# MD046 / code-block-style
+# Enforce fenced blocks (```) rather than indented code blocks
+MD046:
+  style: fenced
+
+# MD048 / code-fence-style
+# Enforce backtick fences (```) over tilde fences (~~~)
+MD048:
+  style: backtick
+
+# MD049 / emphasis-style
+# Enforce *asterisk* for italic over _underscore_
+MD049:
+  style: asterisk
+
+# MD050 / strong-style
+# Enforce **asterisk** for bold over __underscore__
+MD050:
+  style: asterisk

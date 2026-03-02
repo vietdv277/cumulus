@@ -15,6 +15,11 @@ type Context struct {
 	Profile  string `yaml:"profile,omitempty"` // AWS profile name
 	Project  string `yaml:"project,omitempty"` // GCP project ID
 	Region   string `yaml:"region,omitempty"`  // Region or zone
+	// GCP bastion host settings
+	Bastion        string `yaml:"bastion,omitempty"`         // bastion instance name
+	BastionProject string `yaml:"bastion_project,omitempty"` // project hosting the bastion (defaults to Project)
+	BastionZone    string `yaml:"bastion_zone,omitempty"`    // zone of the bastion (defaults to Region)
+	BastionIAP     bool   `yaml:"bastion_iap,omitempty"`     // use --tunnel-through-iap
 }
 
 // TunnelConfig represents a saved tunnel configuration
