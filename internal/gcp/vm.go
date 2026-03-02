@@ -72,7 +72,7 @@ func (p *GCPVMProvider) enrichWithUMIG(ctx context.Context, vms []types.VM) erro
 	if err != nil {
 		return fmt.Errorf("create instance groups client: %w", err)
 	}
-	defer igc.Close()
+	defer func() { _ = igc.Close() }()
 
 	region := p.client.Region()
 	req := &computepb.AggregatedListInstanceGroupsRequest{
@@ -221,7 +221,7 @@ func (p *GCPVMProvider) List(ctx context.Context, filter *provider.VMFilter) ([]
 	if err != nil {
 		return nil, fmt.Errorf("create instances client: %w", err)
 	}
-	defer ic.Close()
+	defer func() { _ = ic.Close() }()
 
 	gceFilter := buildFilter(filter)
 	region := p.client.Region()
@@ -338,7 +338,7 @@ func (p *GCPVMProvider) Start(ctx context.Context, nameOrID string) error {
 	if err != nil {
 		return fmt.Errorf("create instances client: %w", err)
 	}
-	defer ic.Close()
+	defer func() { _ = ic.Close() }()
 
 	op, err := ic.Start(ctx, &computepb.StartInstanceRequest{
 		Project:  p.client.Project(),
@@ -362,7 +362,7 @@ func (p *GCPVMProvider) Stop(ctx context.Context, nameOrID string) error {
 	if err != nil {
 		return fmt.Errorf("create instances client: %w", err)
 	}
-	defer ic.Close()
+	defer func() { _ = ic.Close() }()
 
 	op, err := ic.Stop(ctx, &computepb.StopInstanceRequest{
 		Project:  p.client.Project(),
@@ -386,7 +386,7 @@ func (p *GCPVMProvider) Reboot(ctx context.Context, nameOrID string) error {
 	if err != nil {
 		return fmt.Errorf("create instances client: %w", err)
 	}
-	defer ic.Close()
+	defer func() { _ = ic.Close() }()
 
 	op, err := ic.Reset(ctx, &computepb.ResetInstanceRequest{
 		Project:  p.client.Project(),
