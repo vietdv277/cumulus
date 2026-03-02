@@ -39,6 +39,23 @@ Examples:
 	RunE: runUseAdd,
 }
 
+var useUpdateCmd = &cobra.Command{
+	Use:   "update <context-name>",
+	Short: "Update fields of an existing context",
+	Long: `Update one or more fields of an existing context without replacing it.
+Only flags that are explicitly provided are changed; all other fields are preserved.
+
+To remove the bastion from a context, pass --bastion="" explicitly.
+
+Examples:
+  cml use update gcp:prod --bastion bastion --bastion-project nexa-infra-np \
+      --bastion-zone asia-southeast1-b --bastion-iap
+  cml use update aws:prod --region us-west-2
+  cml use update gcp:prod --bastion ""    # remove bastion`,
+	Args: cobra.ExactArgs(1),
+	RunE: runUseUpdate,
+}
+
 var useDeleteCmd = &cobra.Command{
 	Use:   "delete <context-name>",
 	Short: "Delete a context",
@@ -53,20 +70,47 @@ Examples:
 
 var (
 	// Flags for use add
-	useAddProfile string
-	useAddProject string
-	useAddRegion  string
+	useAddProfile     string
+	useAddProject     string
+	useAddRegion      string
+	useAddBastion     string
+	useAddBastionProj string
+	useAddBastionZone string
+	useAddBastionIAP  bool
+
+	// Flags for use update
+	useUpdateProfile     string
+	useUpdateProject     string
+	useUpdateRegion      string
+	useUpdateBastion     string
+	useUpdateBastionProj string
+	useUpdateBastionZone string
+	useUpdateBastionIAP  bool
 )
 
 func init() {
 	rootCmd.AddCommand(useCmd)
 	useCmd.AddCommand(useAddCmd)
+	useCmd.AddCommand(useUpdateCmd)
 	useCmd.AddCommand(useDeleteCmd)
+
+	// Flags for use update
+	useUpdateCmd.Flags().StringVar(&useUpdateProfile, "profile", "", "AWS profile name")
+	useUpdateCmd.Flags().StringVar(&useUpdateProject, "project", "", "GCP project ID")
+	useUpdateCmd.Flags().StringVar(&useUpdateRegion, "region", "", "Region or zone")
+	useUpdateCmd.Flags().StringVar(&useUpdateBastion, "bastion", "", "GCP bastion instance name (set to \"\" to remove)")
+	useUpdateCmd.Flags().StringVar(&useUpdateBastionProj, "bastion-project", "", "GCP project hosting the bastion")
+	useUpdateCmd.Flags().StringVar(&useUpdateBastionZone, "bastion-zone", "", "Zone of the bastion instance")
+	useUpdateCmd.Flags().BoolVar(&useUpdateBastionIAP, "bastion-iap", false, "Use --tunnel-through-iap for bastion access")
 
 	// Flags for use add
 	useAddCmd.Flags().StringVar(&useAddProfile, "profile", "", "AWS profile name")
 	useAddCmd.Flags().StringVar(&useAddProject, "project", "", "GCP project ID")
 	useAddCmd.Flags().StringVar(&useAddRegion, "region", "", "Region or zone")
+	useAddCmd.Flags().StringVar(&useAddBastion, "bastion", "", "GCP bastion instance name")
+	useAddCmd.Flags().StringVar(&useAddBastionProj, "bastion-project", "", "GCP project hosting the bastion (defaults to --project)")
+	useAddCmd.Flags().StringVar(&useAddBastionZone, "bastion-zone", "", "Zone of the bastion instance (defaults to --region)")
+	useAddCmd.Flags().BoolVar(&useAddBastionIAP, "bastion-iap", false, "Use --tunnel-through-iap for bastion access")
 }
 
 func runUse(cmd *cobra.Command, args []string) error {
@@ -116,6 +160,12 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if ctx.Region != "" {
 		fmt.Printf("  Region:   %s\n", ctx.Region)
 	}
+	if ctx.Bastion != "" {
+		fmt.Printf("  Bastion:  %s\n", ctx.Bastion)
+		if ctx.BastionProject != "" {
+			fmt.Printf("  Bastion Project: %s\n", ctx.BastionProject)
+		}
+	}
 
 	return nil
 }
@@ -154,6 +204,12 @@ func runUseAdd(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("--project is required for GCP contexts")
 		}
 		ctx.Project = useAddProject
+		if useAddBastion != "" {
+			ctx.Bastion = useAddBastion
+			ctx.BastionProject = useAddBastionProj
+			ctx.BastionZone = useAddBastionZone
+			ctx.BastionIAP = useAddBastionIAP
+		}
 	default:
 		return fmt.Errorf("unknown provider: %s (supported: aws, gcp)", provider)
 	}
@@ -167,6 +223,66 @@ func runUseAdd(cmd *cobra.Command, args []string) error {
 	fmt.Println("\nTo use this context:")
 	fmt.Printf("  cml use %s\n", contextName)
 
+	return nil
+}
+
+func runUseUpdate(cmd *cobra.Command, args []string) error {
+	contextName := args[0]
+
+	cfg, err := config.LoadCMLConfig()
+	if err != nil {
+		return err
+	}
+	ctx, ok := cfg.Contexts[contextName]
+	if !ok {
+		return fmt.Errorf("context %q not found — use 'cml use add' to create it", contextName)
+	}
+
+	changed := func(name string) bool { return cmd.Flags().Changed(name) }
+
+	if changed("profile") {
+		ctx.Profile = useUpdateProfile
+	}
+	if changed("project") {
+		ctx.Project = useUpdateProject
+	}
+	if changed("region") {
+		ctx.Region = useUpdateRegion
+	}
+	if changed("bastion") {
+		ctx.Bastion = useUpdateBastion
+	}
+	if changed("bastion-project") {
+		ctx.BastionProject = useUpdateBastionProj
+	}
+	if changed("bastion-zone") {
+		ctx.BastionZone = useUpdateBastionZone
+	}
+	if changed("bastion-iap") {
+		ctx.BastionIAP = useUpdateBastionIAP
+	}
+
+	if err := config.SaveCMLConfig(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("Context updated: %s\n", contextName)
+	fmt.Printf("  Provider: %s\n", ctx.Provider)
+	if ctx.Profile != "" {
+		fmt.Printf("  Profile:  %s\n", ctx.Profile)
+	}
+	if ctx.Project != "" {
+		fmt.Printf("  Project:  %s\n", ctx.Project)
+	}
+	if ctx.Region != "" {
+		fmt.Printf("  Region:   %s\n", ctx.Region)
+	}
+	if ctx.Bastion != "" {
+		fmt.Printf("  Bastion:  %s\n", ctx.Bastion)
+		if ctx.BastionProject != "" {
+			fmt.Printf("  Bastion Project: %s\n", ctx.BastionProject)
+		}
+	}
 	return nil
 }
 
