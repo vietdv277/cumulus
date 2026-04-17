@@ -469,54 +469,57 @@ SecretValue
 
 ## Development Phases
 
-### Phase 1: Foundation (Week 1-2)
+### Phase 1: Foundation — complete
 
 - [x] Project setup (go mod, structure)
 - [x] Cobra + Viper integration
 - [x] Config file handling
 - [x] Context management (use, status, contexts)
 - [x] AWS authentication (SSO, profile)
-- [ ] GCP authentication (ADC)
+- [x] GCP authentication (ADC)
 - [x] Basic output formatting
 
-### Phase 2: VM Management (Week 3-4)
+### Phase 2: VM Management — complete
 
 - [x] Provider interfaces (VMProvider)
 - [x] AWS EC2 implementation
-- [ ] GCP GCE implementation
+- [x] GCP GCE implementation
 - [x] `vm list` with table output
 - [x] `vm list -i` interactive TUI mode (bubbletea — connect/start/stop)
-- [x] `vm connect` (SSM / gcloud SSH) - SSM done
+- [x] `vm connect` (SSM for AWS, gcloud SSH + IAP for GCP)
 - [x] `vm tunnel` (port forwarding)
 - [x] `vm start/stop/reboot`
 
-### Phase 3: Database & Secrets (Week 5-8)
+### Phase 3: Database & Secrets — in progress
 
-- [ ] `db list` and `db connect`
-- [ ] RDS / Cloud SQL implementations
+- [x] `db list`, `db get`, and `db connect` (AWS)
+- [x] RDS implementation (list/get + SSM port-forward via bastion for connect)
+- [ ] Cloud SQL implementation
 - [x] `secrets list/get/set`
 - [x] SSM Parameter Store implementation
-- [ ] GCP Secret Manager implementation
 - [x] AWS Secrets Manager implementation
+- [ ] GCP Secret Manager implementation
 
-### Phase 4: Storage & Logs (Week 9-12)
+### Phase 4: Storage & Logs — in progress
 
-- [ ] `storage ls/cp/sync`
-- [ ] S3 / GCS implementations
+- [x] `storage ls/cp/sync/presign` (AWS)
+- [x] S3 implementation
+- [ ] GCS implementation
 - [ ] `logs` command with tail mode
 - [ ] CloudWatch / Cloud Logging implementations
 
-### Phase 5: Kubernetes (Week 13-14)
+### Phase 5: Kubernetes — planned
 
 - [ ] `k8s list` and `k8s use`
 - [ ] EKS / GKE implementations
 - [ ] Kubeconfig management
 
-### Phase 6: Polish (Week 15-16)
+### Phase 6: Polish — in progress
 
 - [ ] Shell completions (zsh, bash, fish)
 - [ ] `--output json/yaml/table` flag
-- [ ] Alias system
+- [x] Alias resolution in config layer
+- [ ] User-facing alias management commands
 - [ ] `doctor` command
 - [ ] Error handling improvements
 - [ ] Documentation
