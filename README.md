@@ -1,5 +1,10 @@
 # Cumulus (cml)
 
+[![CI](https://github.com/vietdv277/cumulus/actions/workflows/ci.yml/badge.svg)](https://github.com/vietdv277/cumulus/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/vietdv277/cumulus)](https://goreportcard.com/report/github.com/vietdv277/cumulus)
+[![Release](https://img.shields.io/github/v/release/vietdv277/cumulus)](https://github.com/vietdv277/cumulus/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A fast, intuitive CLI for multi-cloud resource management (AWS + GCP). Manage VMs, databases, object storage, Kubernetes clusters, and secrets through a unified, context-aware interface with interactive selectors and clean output.
 
 ## Why Cumulus?

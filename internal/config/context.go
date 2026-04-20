@@ -1,3 +1,6 @@
+// Package config loads and saves the context-aware CLI configuration at
+// ~/.config/cml/config.yaml (XDG-compliant). A context encodes a cloud
+// provider plus credentials reference (AWS profile or GCP project) and region.
 package config
 
 import (

@@ -1,3 +1,6 @@
+// Package aws implements the CloudProvider interfaces for Amazon Web Services.
+// Sub-clients (EC2, ASG, ELBv2, RDS, S3, EKS) are constructed lazily on first
+// access so short-lived CLI commands only pay for the services they use.
 package aws
 
 import (

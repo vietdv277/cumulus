@@ -1,3 +1,7 @@
+// Package provider defines cloud-agnostic interfaces for resource management.
+// Each provider (AWS, GCP) implements the relevant subset of these interfaces:
+// VMProvider, SecretsProvider, DBProvider, StorageProvider, LogsProvider, and
+// K8sProvider. CloudProvider aggregates them.
 package provider
 
 import (

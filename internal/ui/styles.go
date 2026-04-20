@@ -1,3 +1,5 @@
+// Package ui provides interactive TUI components (bubbletea selectors) and
+// table renderers (lipgloss) shared across CLI commands.
 package ui
 
 import (
