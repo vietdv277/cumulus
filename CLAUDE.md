@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cumulus (`cml`) is a personal CLI tool for AWS (and future GCP) resource management, written in Go.
+Cumulus (`cml`) is a personal CLI tool for AWS and GCP resource management, written in Go.
 
 ## Module Path
 
@@ -17,9 +17,18 @@ All imports must use this full path.
 - Language: Go 1.24+
 - CLI Framework: Cobra + Viper
 - AWS SDK: `aws-sdk-go-v2`
+- GCP SDK: `cloud.google.com/go/compute` + `google.golang.org/api`
 - TUI: charmbracelet/bubbletea (interactive selectors) + charmbracelet/lipgloss (styling)
 
+## Dev Container
+
+A `.devcontainer/` setup is provided for VS Code / GitHub Codespaces. The container runs as user `vscode`, sets `bypassPermissions` for Claude Code, and mounts `~/.gitconfig` read-only from the host (git uses `~/.gitconfig.local` inside the container via `GIT_CONFIG_GLOBAL`).
+
+On creation, `post_install.py` runs to: bypass Claude onboarding, configure tmux, fix volume ownership, and set up a global gitignore. Pass `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` in your local environment to have them forwarded into the container.
+
 ## Build & Test
+
+> There are currently no `_test.go` files in the repository. The test commands below are valid but will report nothing to test.
 
 ```bash
 # Build (injects version/commit/date via ldflags)
@@ -28,14 +37,20 @@ make build
 # Run without building
 make run ARGS="ec2 ls"
 
-# Test
+# Test all packages
 make test
+
+# Run a single test
+go test ./internal/aws/... -run TestName -v
 
 # Test with coverage report
 make test-cover
 
 # Format, vet, test, and build
 make all
+
+# Lint (requires golangci-lint)
+make lint
 
 # Install to $GOPATH/bin
 make install
@@ -53,7 +68,7 @@ The codebase has a legacy layer and a newer context-aware layer. Both coexist:
 
 ### Context System (`internal/config/context.go`)
 
-Config lives at `~/.config/cml/config.yaml`. A context encodes provider + named environment:
+Config lives at `~/.config/cml/config.yaml` (XDG-compliant; respects `$XDG_CONFIG_HOME`). A context encodes provider + named environment:
 
 ```yaml
 current_context: aws:prod
@@ -62,16 +77,52 @@ contexts:
     provider: aws
     profile: prod-sso
     region: us-east-1
+  gcp:staging:
+    provider: gcp
+    project: mycompany-staging
+    region: asia-southeast1
+    bastion: bastion-host          # optional IAP/SSH bastion
+    bastion_project: infra-project # defaults to project
+    bastion_zone: asia-southeast1-b
+    bastion_iap: true
+aliases:                           # short names → full context names
+  prod: aws:prod
+tunnels:                           # saved tunnel configs (used by vm tunnel --save)
+  db-prod:
+    context: aws:prod
+    target: i-0abc123
+    remote_port: 5432
+    local_port: 5432
+defaults:
+  output: table                    # table | json | yaml
+  interactive: false
+  region_fallback: us-east-1
 ```
 
 Use `ParseContextName("aws:prod")` → `{provider: "aws", name: "prod"}`.
-`MigrateFromOldConfig()` handles migration from the legacy `~/.cml/config.yaml`.
+
+Context-aware commands (`vm`, `secrets`, etc.) accept `--context <name>` to temporarily override the active context without switching it.
+
+Three migration helpers run at startup for legacy config locations:
+- `MigrateFromOldConfig()` — from `~/.cml/config.yaml` (handled by `internal/config/config.go`, the legacy-only package)
+- `MigrateFromDotFileConfig()` — from `~/.cml.yaml`
+- `MigrateFromMacOSConfig()` — from `~/Library/Application Support/cml/config.yaml`
+
+`internal/config/config.go` is legacy-only; all active config logic lives in `internal/config/context.go`.
 
 ### Provider Interface (`pkg/provider/interfaces.go`)
 
 All cloud resources are abstracted behind interfaces: `VMProvider`, `SecretsProvider`,
 `DBProvider`, `StorageProvider`, `LogsProvider`, `K8sProvider`. The `CloudProvider`
-interface aggregates them all. AWS implementations live in `internal/aws/`; GCP is planned.
+interface aggregates them all. AWS implementations (vm, secrets, db, storage, k8s) live
+in `internal/aws/`; GCP implementations (vm, k8s) live in `internal/gcp/`.
+
+### Kubeconfig (`internal/kubeconfig/`)
+
+Read-only reader for `~/.kube/config` (or `KUBECONFIG`). Extracts contexts and
+current-context for `cml k8s contexts`. Writing is delegated to cloud CLIs
+(`aws eks update-kubeconfig`, `gcloud container clusters get-credentials`) — do not
+add kubeconfig mutation here.
 
 ### AWS Client (`internal/aws/client.go`)
 
@@ -83,6 +134,18 @@ client, err := aws.NewClient(ctx, aws.WithProfile("prod"), aws.WithRegion("us-ea
 
 The `Client` struct holds sub-clients for EC2, SSM, STS, Auto Scaling, ELBv2, and Secrets Manager.
 
+### GCP Client (`internal/gcp/client.go`)
+
+Uses Application Default Credentials (ADC) via `google.FindDefaultCredentials`. Auth resolves in order: `GOOGLE_APPLICATION_CREDENTIALS` env var → gcloud user credentials → GCE metadata server.
+
+```go
+client, err := gcp.NewClient(ctx, gcp.WithProject("my-project"), gcp.WithRegion("us-central1"))
+```
+
+GCP VM connectivity uses `gcloud compute ssh`, optionally routing through an IAP bastion configured on the context.
+
+GCP `region` field behaviour: if the value looks like a zone (e.g. `us-central1-a` — two or more hyphens, ends with letter a–f), `internal/gcp/vm.go` uses a zone-scoped `instances.List`; otherwise it uses `instances.AggregatedList` filtered to zones prefixed by the region string.
+
 ### Secrets Routing (`internal/aws/secrets.go`)
 
 Names starting with `/` route to SSM Parameter Store; others route to AWS Secrets Manager.
@@ -92,20 +155,35 @@ Both are aggregated by `List()`.
 
 ```text
 cml
-├── vm                     # Context-aware unified VM management
-│   ├── list               # List VMs (--state, --name, --tag)
+├── vm                     # Context-aware unified VM management (AWS + GCP)
+│   ├── list               # List VMs (--state, --name, --tag, --interactive)
 │   ├── get <id|name>      # Get VM details
-│   ├── connect <id|name>  # SSH/SSM session
-│   ├── tunnel <id> ...    # Port forwarding via SSM
+│   ├── connect <id|name>  # SSH/SSM (AWS) or gcloud ssh (GCP)
+│   ├── tunnel <id> ...    # Port forwarding via SSM or gcloud
 │   ├── start/stop/reboot  # Lifecycle
 ├── secrets                # Unified secrets (SSM + Secrets Manager)
 │   ├── list               # List all secrets from both sources
 │   ├── get <name>         # Get secret value
 │   ├── set <name> <val>   # Create/update secret
 │   └── delete <name>      # Delete secret
+├── db                     # Managed databases (AWS RDS / GCP Cloud SQL)
+│   ├── list               # List databases (--engine filter)
+│   ├── get <name>         # Details
+│   └── connect <name>     # Port-forward tunnel (AWS: --via <bastion-instance-id>)
+├── storage (s3)           # Object storage (S3 / GCS); paths use s3://bucket/key
+│   ├── ls [s3://b [pfx]]  # List buckets, or objects under prefix
+│   ├── cp <src> <dst>     # Copy one object (local ↔ remote)
+│   ├── sync <src> <dst>   # Sync directory (--delete)
+│   └── presign <s3://...> # Presigned GET URL
+├── k8s                    # Kubernetes cluster management
+│   ├── list               # List EKS / GKE clusters in context
+│   ├── get <name>         # Cluster details
+│   ├── use <name>         # Update kubeconfig + switch kubectl context
+│   └── contexts           # List kubectl contexts
 ├── use                    # Context management
 │   ├── <context>          # Switch active context
-│   ├── add <context>      # Add context (--profile, --region)
+│   ├── add <context>      # Add context (--profile/--project, --region, bastion flags)
+│   ├── update <context>   # Update specific fields of a context
 │   └── delete <context>   # Remove context
 ├── status                 # Show current context and auth info
 ├── contexts (ctx)         # List all contexts
