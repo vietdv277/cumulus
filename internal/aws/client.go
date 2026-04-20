@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -22,6 +23,7 @@ type Client struct {
 	ELBv2   *elbv2.Client
 	RDS     *rds.Client
 	S3      *s3.Client
+	EKS     *eks.Client
 	cfg     awsconfig.Config
 	ctx     context.Context
 	profile string
@@ -80,6 +82,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c.ELBv2 = elbv2.NewFromConfig(cfg)
 	c.RDS = rds.NewFromConfig(cfg)
 	c.S3 = s3.NewFromConfig(cfg)
+	c.EKS = eks.NewFromConfig(cfg)
 
 	return c, nil
 }

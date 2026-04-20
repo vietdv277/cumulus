@@ -508,11 +508,11 @@ SecretValue
 - [ ] `logs` command with tail mode
 - [ ] CloudWatch / Cloud Logging implementations
 
-### Phase 5: Kubernetes — planned
+### Phase 5: Kubernetes — complete
 
-- [ ] `k8s list` and `k8s use`
-- [ ] EKS / GKE implementations
-- [ ] Kubeconfig management
+- [x] `k8s list`, `k8s get`, `k8s use`, `k8s contexts`
+- [x] EKS / GKE implementations
+- [x] Kubeconfig management (shells out to `aws eks update-kubeconfig` / `gcloud container clusters get-credentials`)
 
 ### Phase 6: Polish — in progress
 
