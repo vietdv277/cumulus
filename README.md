@@ -1,6 +1,6 @@
 # Cumulus (cml)
 
-A fast, intuitive CLI for multi-cloud resource management (AWS + GCP). Manage EC2 and GCE instances, secrets, and more through a unified, context-aware interface with interactive selectors and clean output.
+A fast, intuitive CLI for multi-cloud resource management (AWS + GCP). Manage VMs, databases, object storage, Kubernetes clusters, and secrets through a unified, context-aware interface with interactive selectors and clean output.
 
 ## Why Cumulus?
 
@@ -18,7 +18,10 @@ cml vm list
 - **Multi-cloud** — AWS and GCP in one tool; same commands, same UX
 - **Context system** — switch between environments with `cml use <context>`
 - **Unified VM management** — list, connect, tunnel, start/stop/reboot across providers
-- **Interactive selectors** — pick instances from a filterable TUI without memorizing IDs
+- **Managed databases** — list and tunnel into RDS / Cloud SQL through a bastion
+- **Object storage** — `ls`, `cp`, `sync`, `presign` for S3 and GCS
+- **Kubernetes** — list EKS / GKE clusters and update kubeconfig from one command
+- **Interactive selectors** — pick resources from a filterable TUI without memorizing IDs
 - **GCP bastion / IAP** — connect to private GCE instances through a bastion with optional IAP tunneling
 - **Unified secrets** — AWS SSM Parameter Store, Secrets Manager, and GCP Secret Manager behind one command
 - **Beautiful output** — styled tables with color-coded state indicators
@@ -72,6 +75,7 @@ sha256sum --check --ignore-missing checksums.txt
 
 - **AWS**: credentials configured (`~/.aws/credentials` or environment variables), [AWS Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) for `vm connect`
 - **GCP**: `gcloud` CLI installed and authenticated (`gcloud auth application-default login`)
+- **Kubernetes** (optional): `kubectl` for `k8s use` / `k8s contexts`; `aws eks update-kubeconfig` and `gcloud container clusters get-credentials` are invoked under the hood for kubeconfig updates
 
 ### From source
 
@@ -215,6 +219,46 @@ cml secrets set  /app/db-password s3cr3t  # create or update
 cml secrets delete /app/old-param       # delete
 ```
 
+## Databases
+
+Manage AWS RDS and GCP Cloud SQL in the current context.
+
+```bash
+cml db list                              # list databases
+cml db list --engine postgres            # filter by engine
+cml db get prod-pg                       # show details
+
+# Port-forward to a private database (AWS: via SSM bastion)
+cml db connect prod-pg --via i-0abc123 --local-port 5432
+```
+
+## Object storage
+
+Unified `s3://bucket/key` addressing for S3 and GCS.
+
+```bash
+cml storage ls                                 # list buckets
+cml storage ls s3://my-bucket                  # list objects
+cml storage ls s3://my-bucket logs/            # list with prefix
+
+cml storage cp file.txt s3://my-bucket/key     # upload
+cml storage cp s3://my-bucket/key ./           # download
+
+cml storage sync ./dir s3://my-bucket/dir --delete
+cml storage presign s3://my-bucket/key         # presigned GET URL
+```
+
+## Kubernetes
+
+List EKS / GKE clusters and update kubeconfig from the current context.
+
+```bash
+cml k8s list                    # list clusters in current context
+cml k8s get my-cluster          # cluster details
+cml k8s use my-cluster          # update kubeconfig and switch kubectl context
+cml k8s contexts                # list kubectl contexts (current marked)
+```
+
 ## AWS-specific commands
 
 ```bash
@@ -274,6 +318,9 @@ cumulus/
 │   ├── root.go
 │   ├── vm.go               # context-aware VM commands
 │   ├── secrets.go          # context-aware secrets commands
+│   ├── db.go               # RDS / Cloud SQL
+│   ├── storage.go          # S3 / GCS
+│   ├── k8s.go              # EKS / GKE
 │   ├── use.go              # context management
 │   ├── status.go
 │   ├── contexts.go
@@ -284,12 +331,13 @@ cumulus/
 │   └── profile.go
 ├── internal/
 │   ├── aws/                # AWS client and provider implementations
-│   ├── gcp/                # GCP client and GCE provider implementations
+│   ├── gcp/                # GCP client and provider implementations
+│   ├── kubeconfig/         # read-only kubeconfig reader
 │   ├── ui/                 # bubbletea TUI components (selectors, tables)
 │   └── config/             # context config (load, save, migrate)
 ├── pkg/
-│   ├── provider/           # VMProvider, SecretsProvider interfaces
-│   └── types/              # shared domain types (VM, Secret, …)
+│   ├── provider/           # VMProvider, SecretsProvider, DBProvider, StorageProvider, K8sProvider
+│   └── types/              # shared domain types (VM, Secret, DB, Bucket, Cluster, …)
 ├── main.go
 └── go.mod
 ```
