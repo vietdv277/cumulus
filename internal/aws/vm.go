@@ -74,7 +74,7 @@ func (p *AWSVMProvider) List(ctx context.Context, filter *provider.VMFilter) ([]
 		Filters: filters,
 	}
 
-	output, err := p.client.EC2.DescribeInstances(ctx, input)
+	output, err := p.client.EC2().DescribeInstances(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe instances: %w", err)
 	}
@@ -98,7 +98,7 @@ func (p *AWSVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, er
 			InstanceIds: []string{nameOrID},
 		}
 
-		output, err := p.client.EC2.DescribeInstances(ctx, input)
+		output, err := p.client.EC2().DescribeInstances(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("instance not found: %s", nameOrID)
 		}
@@ -120,7 +120,7 @@ func (p *AWSVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, er
 		},
 	}
 
-	output, err := p.client.EC2.DescribeInstances(ctx, input)
+	output, err := p.client.EC2().DescribeInstances(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find instance: %w", err)
 	}
@@ -140,7 +140,7 @@ func (p *AWSVMProvider) Start(ctx context.Context, nameOrID string) error {
 		return err
 	}
 
-	_, err = p.client.EC2.StartInstances(ctx, &ec2.StartInstancesInput{
+	_, err = p.client.EC2().StartInstances(ctx, &ec2.StartInstancesInput{
 		InstanceIds: []string{vm.ID},
 	})
 	return err
@@ -153,7 +153,7 @@ func (p *AWSVMProvider) Stop(ctx context.Context, nameOrID string) error {
 		return err
 	}
 
-	_, err = p.client.EC2.StopInstances(ctx, &ec2.StopInstancesInput{
+	_, err = p.client.EC2().StopInstances(ctx, &ec2.StopInstancesInput{
 		InstanceIds: []string{vm.ID},
 	})
 	return err
@@ -166,7 +166,7 @@ func (p *AWSVMProvider) Reboot(ctx context.Context, nameOrID string) error {
 		return err
 	}
 
-	_, err = p.client.EC2.RebootInstances(ctx, &ec2.RebootInstancesInput{
+	_, err = p.client.EC2().RebootInstances(ctx, &ec2.RebootInstancesInput{
 		InstanceIds: []string{vm.ID},
 	})
 	return err

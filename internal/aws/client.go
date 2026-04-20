@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -12,22 +13,33 @@ import (
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
-// Client wraps AWS SDK clients
+// Client wraps AWS SDK clients. Sub-clients are constructed lazily on first
+// access so short-lived CLI invocations only pay for what they use.
 type Client struct {
-	EC2     *ec2.Client
-	SSM     *ssm.Client
-	ASG     *autoscaling.Client
-	ELBv2   *elbv2.Client
-	RDS     *rds.Client
-	S3      *s3.Client
-	EKS     *eks.Client
 	cfg     awsconfig.Config
 	ctx     context.Context
 	profile string
 	region  string
+
+	ec2Once   sync.Once
+	ec2Client *ec2.Client
+
+	asgOnce   sync.Once
+	asgClient *autoscaling.Client
+
+	elbv2Once   sync.Once
+	elbv2Client *elbv2.Client
+
+	rdsOnce   sync.Once
+	rdsClient *rds.Client
+
+	s3Once   sync.Once
+	s3Client *s3.Client
+
+	eksOnce   sync.Once
+	eksClient *eks.Client
 }
 
 // ClientOption allows customizing the AWS Client
@@ -47,18 +59,17 @@ func WithRegion(region string) ClientOption {
 	}
 }
 
-// NewClient creates a new AWS Client with the given options
+// NewClient creates a new AWS Client with the given options. Only the shared
+// AWS config is loaded here; service sub-clients are built on first use.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		ctx: ctx,
 	}
 
-	// Apply options
 	for _, opt := range opts {
 		opt(c)
 	}
 
-	// Build config options
 	var configOpts []func(*config.LoadOptions) error
 
 	if c.profile != "" {
@@ -69,22 +80,49 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		configOpts = append(configOpts, config.WithRegion(c.region))
 	}
 
-	// Load AWS config
 	cfg, err := config.LoadDefaultConfig(c.ctx, configOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS SDK config: %w", err)
 	}
 
 	c.cfg = cfg
-	c.EC2 = ec2.NewFromConfig(cfg)
-	c.SSM = ssm.NewFromConfig(cfg)
-	c.ASG = autoscaling.NewFromConfig(cfg)
-	c.ELBv2 = elbv2.NewFromConfig(cfg)
-	c.RDS = rds.NewFromConfig(cfg)
-	c.S3 = s3.NewFromConfig(cfg)
-	c.EKS = eks.NewFromConfig(cfg)
-
 	return c, nil
+}
+
+// EC2 returns the lazily-constructed EC2 client.
+func (c *Client) EC2() *ec2.Client {
+	c.ec2Once.Do(func() { c.ec2Client = ec2.NewFromConfig(c.cfg) })
+	return c.ec2Client
+}
+
+// ASG returns the lazily-constructed Auto Scaling client.
+func (c *Client) ASG() *autoscaling.Client {
+	c.asgOnce.Do(func() { c.asgClient = autoscaling.NewFromConfig(c.cfg) })
+	return c.asgClient
+}
+
+// ELBv2 returns the lazily-constructed ELBv2 client.
+func (c *Client) ELBv2() *elbv2.Client {
+	c.elbv2Once.Do(func() { c.elbv2Client = elbv2.NewFromConfig(c.cfg) })
+	return c.elbv2Client
+}
+
+// RDS returns the lazily-constructed RDS client.
+func (c *Client) RDS() *rds.Client {
+	c.rdsOnce.Do(func() { c.rdsClient = rds.NewFromConfig(c.cfg) })
+	return c.rdsClient
+}
+
+// S3 returns the lazily-constructed S3 client.
+func (c *Client) S3() *s3.Client {
+	c.s3Once.Do(func() { c.s3Client = s3.NewFromConfig(c.cfg) })
+	return c.s3Client
+}
+
+// EKS returns the lazily-constructed EKS client.
+func (c *Client) EKS() *eks.Client {
+	c.eksOnce.Do(func() { c.eksClient = eks.NewFromConfig(c.cfg) })
+	return c.eksClient
 }
 
 // Config returns the underlying AWS config

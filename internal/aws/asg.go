@@ -35,7 +35,7 @@ func (c *Client) ListAutoScalingGroups(input *ListASGInput) ([]pkgtypes.AutoScal
 			describeInput.AutoScalingGroupNames = input.Names
 		}
 
-		output, err := c.ASG.DescribeAutoScalingGroups(c.ctx, describeInput)
+		output, err := c.ASG().DescribeAutoScalingGroups(c.ctx, describeInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe auto scaling groups: %w", err)
 		}
@@ -68,7 +68,7 @@ func (c *Client) ListAutoScalingGroups(input *ListASGInput) ([]pkgtypes.AutoScal
 
 // DescribeAutoScalingGroup returns detailed info about a specific ASG including its instances
 func (c *Client) DescribeAutoScalingGroup(name string) (*pkgtypes.AutoScalingGroup, error) {
-	output, err := c.ASG.DescribeAutoScalingGroups(c.ctx, &autoscaling.DescribeAutoScalingGroupsInput{
+	output, err := c.ASG().DescribeAutoScalingGroups(c.ctx, &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []string{name},
 	})
 	if err != nil {
@@ -129,7 +129,7 @@ func (c *Client) UpdateAutoScalingGroup(input *UpdateASGInput) error {
 		updateInput.MaxSize = aws.Int32(int32(*input.MaxSize))
 	}
 
-	_, err := c.ASG.UpdateAutoScalingGroup(c.ctx, updateInput)
+	_, err := c.ASG().UpdateAutoScalingGroup(c.ctx, updateInput)
 	if err != nil {
 		return fmt.Errorf("failed to update auto scaling group: %w", err)
 	}
@@ -158,7 +158,7 @@ func (c *Client) StartInstanceRefresh(input *RefreshInput) (string, error) {
 		},
 	}
 
-	output, err := c.ASG.StartInstanceRefresh(c.ctx, refreshInput)
+	output, err := c.ASG().StartInstanceRefresh(c.ctx, refreshInput)
 	if err != nil {
 		return "", fmt.Errorf("failed to start instance refresh: %w", err)
 	}

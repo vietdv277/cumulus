@@ -59,7 +59,7 @@ func (c *Client) ListInstances(input *ListInstanceInput) ([]pkgtypes.Instance, e
 	}
 
 	// Call AWS API
-	output, err := c.EC2.DescribeInstances(c.ctx, describeInput)
+	output, err := c.EC2().DescribeInstances(c.ctx, describeInput)
 	if err != nil {
 		return nil, err
 	}

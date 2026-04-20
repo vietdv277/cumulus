@@ -35,7 +35,7 @@ func NewStorageProvider(client *Client, profile, region string) *AWSStorageProvi
 
 // ListBuckets returns all buckets owned by the caller
 func (p *AWSStorageProvider) ListBuckets(ctx context.Context) ([]types.Bucket, error) {
-	out, err := p.client.S3.ListBuckets(ctx, &s3.ListBucketsInput{})
+	out, err := p.client.S3().ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list buckets: %w", err)
 	}
@@ -64,7 +64,7 @@ func (p *AWSStorageProvider) ListObjects(ctx context.Context, bucket, prefix str
 	}
 
 	var objects []types.Object
-	paginator := s3.NewListObjectsV2Paginator(p.client.S3, input)
+	paginator := s3.NewListObjectsV2Paginator(p.client.S3(), input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -102,7 +102,7 @@ func (p *AWSStorageProvider) Copy(ctx context.Context, src, dst string) error {
 
 	switch {
 	case srcRemote && dstRemote:
-		_, err := p.client.S3.CopyObject(ctx, &s3.CopyObjectInput{
+		_, err := p.client.S3().CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     aws.String(dstBucket),
 			Key:        aws.String(dstKey),
 			CopySource: aws.String(srcBucket + "/" + srcKey),
@@ -113,7 +113,7 @@ func (p *AWSStorageProvider) Copy(ctx context.Context, src, dst string) error {
 		return nil
 
 	case srcRemote && !dstRemote:
-		out, err := p.client.S3.GetObject(ctx, &s3.GetObjectInput{
+		out, err := p.client.S3().GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(srcBucket),
 			Key:    aws.String(srcKey),
 		})
@@ -146,7 +146,7 @@ func (p *AWSStorageProvider) Copy(ctx context.Context, src, dst string) error {
 			dstKey = strings.TrimSuffix(dstKey, "/") + "/" + filepath.Base(src)
 			dstKey = strings.TrimPrefix(dstKey, "/")
 		}
-		_, err = p.client.S3.PutObject(ctx, &s3.PutObjectInput{
+		_, err = p.client.S3().PutObject(ctx, &s3.PutObjectInput{
 			Bucket: aws.String(dstBucket),
 			Key:    aws.String(dstKey),
 			Body:   f,
@@ -200,7 +200,7 @@ func (p *AWSStorageProvider) Presign(ctx context.Context, path string, expirySec
 		expirySeconds = 3600
 	}
 
-	presigner := s3.NewPresignClient(p.client.S3)
+	presigner := s3.NewPresignClient(p.client.S3())
 	req, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),

@@ -10,7 +10,7 @@ import (
 
 // ListVPCs returns all VPCs
 func (c *Client) ListVPCs() ([]pkgtypes.VPC, error) {
-	output, err := c.EC2.DescribeVpcs(c.ctx, &ec2.DescribeVpcsInput{})
+	output, err := c.EC2().DescribeVpcs(c.ctx, &ec2.DescribeVpcsInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func (c *Client) ListVPCs() ([]pkgtypes.VPC, error) {
 
 // DescribeVPC returns detailed information about a specific VPC
 func (c *Client) DescribeVPC(vpcID string) (*pkgtypes.VPC, error) {
-	output, err := c.EC2.DescribeVpcs(c.ctx, &ec2.DescribeVpcsInput{
+	output, err := c.EC2().DescribeVpcs(c.ctx, &ec2.DescribeVpcsInput{
 		VpcIds: []string{vpcID},
 	})
 	if err != nil {
@@ -53,7 +53,7 @@ func (c *Client) ListSubnets(vpcID string) ([]pkgtypes.Subnet, error) {
 		}
 	}
 
-	output, err := c.EC2.DescribeSubnets(c.ctx, input)
+	output, err := c.EC2().DescribeSubnets(c.ctx, input)
 	if err != nil {
 		return nil, err
 	}

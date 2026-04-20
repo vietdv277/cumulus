@@ -29,7 +29,7 @@ func NewK8sProvider(client *Client, profile, region string) *AWSK8sProvider {
 // Node count is not populated here — call GetCluster for a detailed view.
 func (p *AWSK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, error) {
 	var names []string
-	paginator := eks.NewListClustersPaginator(p.client.EKS, &eks.ListClustersInput{})
+	paginator := eks.NewListClustersPaginator(p.client.EKS(), &eks.ListClustersInput{})
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -50,7 +50,7 @@ func (p *AWSK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, 
 		wg.Add(1)
 		go func(i int, name string) {
 			defer wg.Done()
-			out, err := p.client.EKS.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: strPtr(name)})
+			out, err := p.client.EKS().DescribeCluster(ctx, &eks.DescribeClusterInput{Name: strPtr(name)})
 			if err != nil {
 				errs[i] = fmt.Errorf("describe %s: %w", name, err)
 				return
@@ -73,7 +73,7 @@ func (p *AWSK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, 
 
 // GetCluster returns cluster details including aggregate node count across nodegroups.
 func (p *AWSK8sProvider) GetCluster(ctx context.Context, nameOrID string) (*types.K8sCluster, error) {
-	out, err := p.client.EKS.DescribeCluster(ctx, &eks.DescribeClusterInput{Name: strPtr(nameOrID)})
+	out, err := p.client.EKS().DescribeCluster(ctx, &eks.DescribeClusterInput{Name: strPtr(nameOrID)})
 	if err != nil {
 		return nil, fmt.Errorf("cluster not found: %s", nameOrID)
 	}
@@ -111,7 +111,7 @@ func (p *AWSK8sProvider) UpdateKubeconfig(ctx context.Context, nameOrID string) 
 // managed nodegroups. Returns 0 on any error — node count is informational.
 func (p *AWSK8sProvider) sumNodegroupDesiredSize(ctx context.Context, cluster string) int {
 	var total int
-	paginator := eks.NewListNodegroupsPaginator(p.client.EKS, &eks.ListNodegroupsInput{
+	paginator := eks.NewListNodegroupsPaginator(p.client.EKS(), &eks.ListNodegroupsInput{
 		ClusterName: strPtr(cluster),
 	})
 	for paginator.HasMorePages() {
@@ -120,7 +120,7 @@ func (p *AWSK8sProvider) sumNodegroupDesiredSize(ctx context.Context, cluster st
 			return total
 		}
 		for _, ng := range page.Nodegroups {
-			out, err := p.client.EKS.DescribeNodegroup(ctx, &eks.DescribeNodegroupInput{
+			out, err := p.client.EKS().DescribeNodegroup(ctx, &eks.DescribeNodegroupInput{
 				ClusterName:   strPtr(cluster),
 				NodegroupName: strPtr(ng),
 			})
