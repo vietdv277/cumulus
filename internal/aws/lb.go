@@ -9,7 +9,7 @@ import (
 
 // ListLoadBalancers returns all load balancers (ALB/NLB)
 func (c *Client) ListLoadBalancers() ([]pkgtypes.LoadBalancer, error) {
-	output, err := c.ELBv2.DescribeLoadBalancers(c.ctx, &elbv2.DescribeLoadBalancersInput{})
+	output, err := c.ELBv2().DescribeLoadBalancers(c.ctx, &elbv2.DescribeLoadBalancersInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (c *Client) ListLoadBalancers() ([]pkgtypes.LoadBalancer, error) {
 
 // DescribeLoadBalancer returns detailed information about a specific load balancer
 func (c *Client) DescribeLoadBalancer(name string) (*pkgtypes.LoadBalancer, error) {
-	output, err := c.ELBv2.DescribeLoadBalancers(c.ctx, &elbv2.DescribeLoadBalancersInput{
+	output, err := c.ELBv2().DescribeLoadBalancers(c.ctx, &elbv2.DescribeLoadBalancersInput{
 		Names: []string{name},
 	})
 	if err != nil {
@@ -46,7 +46,7 @@ func (c *Client) GetLoadBalancerByName(name string) (*pkgtypes.LoadBalancer, err
 
 // ListListeners returns all listeners for a load balancer
 func (c *Client) ListListeners(lbARN string) ([]pkgtypes.Listener, error) {
-	output, err := c.ELBv2.DescribeListeners(c.ctx, &elbv2.DescribeListenersInput{
+	output, err := c.ELBv2().DescribeListeners(c.ctx, &elbv2.DescribeListenersInput{
 		LoadBalancerArn: &lbARN,
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func (c *Client) ListTargetGroups(lbARN string) ([]pkgtypes.TargetGroup, error) 
 		input.LoadBalancerArn = &lbARN
 	}
 
-	output, err := c.ELBv2.DescribeTargetGroups(c.ctx, input)
+	output, err := c.ELBv2().DescribeTargetGroups(c.ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (c *Client) ListTargetGroups(lbARN string) ([]pkgtypes.TargetGroup, error) 
 
 // ListTargets returns all targets in a target group with their health status
 func (c *Client) ListTargets(tgARN string) ([]pkgtypes.Target, error) {
-	output, err := c.ELBv2.DescribeTargetHealth(c.ctx, &elbv2.DescribeTargetHealthInput{
+	output, err := c.ELBv2().DescribeTargetHealth(c.ctx, &elbv2.DescribeTargetHealthInput{
 		TargetGroupArn: &tgARN,
 	})
 	if err != nil {

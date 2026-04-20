@@ -44,7 +44,7 @@ func (p *AWSDBProvider) List(ctx context.Context, filter *provider.DBFilter) ([]
 	}
 
 	var dbs []types.Database
-	paginator := rds.NewDescribeDBInstancesPaginator(p.client.RDS, input)
+	paginator := rds.NewDescribeDBInstancesPaginator(p.client.RDS(), input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
@@ -60,7 +60,7 @@ func (p *AWSDBProvider) List(ctx context.Context, filter *provider.DBFilter) ([]
 
 // Get returns a single database by identifier or endpoint name
 func (p *AWSDBProvider) Get(ctx context.Context, nameOrID string) (*types.Database, error) {
-	output, err := p.client.RDS.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+	output, err := p.client.RDS().DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: strPtr(nameOrID),
 	})
 	if err != nil {
