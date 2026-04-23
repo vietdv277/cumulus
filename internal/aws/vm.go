@@ -197,49 +197,59 @@ func (p *AWSVMProvider) Connect(ctx context.Context, nameOrID string) error {
 	return ssmCmd.Run()
 }
 
-// Tunnel creates a port forwarding tunnel via SSM
+// StartPortForward starts an SSM port-forwarding session and returns the running command.
+// Caller owns the process lifecycle (Wait/Kill). Used by Tunnel (blocks on Wait) and by
+// k8s connect (manages lifecycle around a subshell). Output is wired to os.Stderr so the
+// caller's stdout stays clean for subshells / pipes.
+func (p *AWSVMProvider) StartPortForward(ctx context.Context, instanceID string, remotePort, localPort int) (*exec.Cmd, error) {
+	params := map[string][]string{
+		"portNumber":      {strconv.Itoa(remotePort)},
+		"localPortNumber": {strconv.Itoa(localPort)},
+	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal parameters: %w", err)
+	}
+
+	args := []string{
+		"ssm", "start-session",
+		"--target", instanceID,
+		"--document-name", "AWS-StartPortForwardingSession",
+		"--parameters", string(paramsJSON),
+	}
+	if p.profile != "" {
+		args = append(args, "--profile", p.profile)
+	}
+	if p.region != "" {
+		args = append(args, "--region", p.region)
+	}
+
+	cmd := exec.CommandContext(ctx, "aws", args...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start SSM session: %w", err)
+	}
+	return cmd, nil
+}
+
+// Tunnel creates a port forwarding tunnel via SSM (blocking).
 func (p *AWSVMProvider) Tunnel(ctx context.Context, nameOrID string, opts *provider.TunnelOptions) error {
+	if opts == nil {
+		return fmt.Errorf("tunnel options required")
+	}
 	vm, err := p.Get(ctx, nameOrID)
 	if err != nil {
 		return err
 	}
 
-	if opts == nil {
-		return fmt.Errorf("tunnel options required")
-	}
-
-	// Build the parameters JSON
-	params := map[string][]string{
-		"portNumber":      {strconv.Itoa(opts.RemotePort)},
-		"localPortNumber": {strconv.Itoa(opts.LocalPort)},
-	}
-
-	paramsJSON, err := json.Marshal(params)
+	cmd, err := p.StartPortForward(ctx, vm.ID, opts.RemotePort, opts.LocalPort)
 	if err != nil {
-		return fmt.Errorf("failed to marshal parameters: %w", err)
+		return err
 	}
-
-	args := []string{
-		"ssm", "start-session",
-		"--target", vm.ID,
-		"--document-name", "AWS-StartPortForwardingSession",
-		"--parameters", string(paramsJSON),
-	}
-
-	if p.profile != "" {
-		args = append(args, "--profile", p.profile)
-	}
-
-	if p.region != "" {
-		args = append(args, "--region", p.region)
-	}
-
-	ssmCmd := exec.Command("aws", args...)
-	ssmCmd.Stdin = os.Stdin
-	ssmCmd.Stdout = os.Stdout
-	ssmCmd.Stderr = os.Stderr
-
-	return ssmCmd.Run()
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	return cmd.Wait()
 }
 
 // ec2ToVM converts an EC2 instance to the unified VM type

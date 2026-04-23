@@ -3,7 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -61,10 +67,31 @@ var k8sContextsCmd = &cobra.Command{
 	RunE:  runK8sContexts,
 }
 
+var k8sConnectCmd = &cobra.Command{
+	Use:   "connect <cluster>",
+	Short: "Open an SSM tunnel to the context bastion and launch a subshell with HTTPS_PROXY set",
+	Long: `Open an SSM port-forwarding session to the AWS context's bastion instance and
+drop into an interactive subshell with HTTPS_PROXY pointing at the forwarded port.
+kubectl run inside the subshell reaches a private EKS API through the bastion.
+Exiting the subshell tears the tunnel down.
+
+Requires the active AWS context to have a 'bastion' field set (EC2 instance ID).
+The remote port defaults to 8888 and can be overridden via 'bastion_port' on the
+context or --local-port on the command.
+
+Examples:
+  cml k8s connect prod-cluster
+  cml k8s connect prod-cluster --bastion i-013xxxxx --local-port 9999`,
+	Args: cobra.ExactArgs(1),
+	RunE: runK8sConnect,
+}
+
 var (
-	k8sListName        string
-	k8sListInteractive bool
-	k8sContextFlag     string
+	k8sListName         string
+	k8sListInteractive  bool
+	k8sContextFlag      string
+	k8sConnectBastion   string
+	k8sConnectLocalPort int
 )
 
 func init() {
@@ -73,9 +100,13 @@ func init() {
 	k8sCmd.AddCommand(k8sGetCmd)
 	k8sCmd.AddCommand(k8sUseCmd)
 	k8sCmd.AddCommand(k8sContextsCmd)
+	k8sCmd.AddCommand(k8sConnectCmd)
 
 	k8sListCmd.Flags().StringVar(&k8sListName, "name", "", "Filter by name substring")
 	k8sListCmd.Flags().BoolVarP(&k8sListInteractive, "interactive", "i", false, "Interactive selection mode")
+
+	k8sConnectCmd.Flags().StringVar(&k8sConnectBastion, "bastion", "", "Override context bastion instance ID")
+	k8sConnectCmd.Flags().IntVar(&k8sConnectLocalPort, "local-port", 0, "Local port for HTTPS_PROXY (default: bastion_port or 8888)")
 
 	k8sCmd.PersistentFlags().StringVarP(&k8sContextFlag, "context", "c", "", "Use specific context")
 }
@@ -241,6 +272,162 @@ func runK8sContexts(cmd *cobra.Command, args []string) error {
 			padRightVM(c.User, userW))
 	}
 	return nil
+}
+
+// resolveContextForK8s returns the context config and name used by the k8s commands,
+// respecting --context when set and falling back to the current context otherwise.
+func resolveContextForK8s() (*config.Context, string, error) {
+	if k8sContextFlag != "" {
+		cfg, err := config.LoadCMLConfig()
+		if err != nil {
+			return nil, "", err
+		}
+		ctxConfig := cfg.Contexts[k8sContextFlag]
+		if ctxConfig == nil {
+			return nil, "", fmt.Errorf("context %q not found", k8sContextFlag)
+		}
+		return ctxConfig, k8sContextFlag, nil
+	}
+	ctxConfig, ctxName, err := config.GetCurrentContext()
+	if err != nil {
+		return nil, "", err
+	}
+	if ctxConfig == nil {
+		return nil, "", fmt.Errorf("no context set. Use 'cml use <context>' to set one")
+	}
+	return ctxConfig, ctxName, nil
+}
+
+func runK8sConnect(cmd *cobra.Command, args []string) error {
+	cluster := args[0]
+
+	ctxConfig, ctxName, err := resolveContextForK8s()
+	if err != nil {
+		return err
+	}
+	if ctxConfig.Provider != "aws" {
+		return fmt.Errorf("k8s connect is AWS-only for now (context %q is %s)", ctxName, ctxConfig.Provider)
+	}
+
+	bastion := k8sConnectBastion
+	if bastion == "" {
+		bastion = ctxConfig.Bastion
+	}
+	if bastion == "" {
+		return fmt.Errorf("no bastion configured for context %q — set one with:\n"+
+			"  cml use update %s --bastion i-xxxxxx [--bastion-port 8888]", ctxName, ctxName)
+	}
+
+	remotePort := ctxConfig.BastionPort
+	if remotePort == 0 {
+		remotePort = 8888
+	}
+	localPort := k8sConnectLocalPort
+	if localPort == 0 {
+		localPort = remotePort
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client, err := aws.NewClient(ctx,
+		aws.WithProfile(ctxConfig.Profile),
+		aws.WithRegion(ctxConfig.Region),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create AWS client: %w", err)
+	}
+	vmProvider := aws.NewVMProvider(client, ctxConfig.Profile, ctxConfig.Region)
+
+	fmt.Fprintf(os.Stderr, "→ Starting SSM tunnel to %s:%d (local :%d)\n", bastion, remotePort, localPort)
+	tunnelCmd, err := vmProvider.StartPortForward(ctx, bastion, remotePort, localPort)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if tunnelCmd.Process != nil {
+			_ = tunnelCmd.Process.Signal(syscall.SIGTERM)
+			// Small grace period, then force kill.
+			done := make(chan struct{})
+			go func() { _ = tunnelCmd.Wait(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				_ = tunnelCmd.Process.Kill()
+				<-done
+			}
+		}
+	}()
+
+	if err := waitForPort(ctx, localPort, 10*time.Second); err != nil {
+		return fmt.Errorf("tunnel did not become ready: %w", err)
+	}
+
+	proxy := fmt.Sprintf("http://localhost:%d", localPort)
+	fmt.Fprintf(os.Stderr, "→ Proxy ready at %s\n", proxy)
+	fmt.Fprintln(os.Stderr, "→ Entering subshell (HTTPS_PROXY set). Type 'exit' to disconnect.")
+	fmt.Fprintln(os.Stderr)
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	sub := exec.Command(shell, "-i")
+	sub.Env = append(os.Environ(),
+		"HTTPS_PROXY="+proxy,
+		"https_proxy="+proxy,
+		"HTTP_PROXY="+proxy,
+		"http_proxy="+proxy,
+		"CML_K8S_CONNECT="+cluster,
+		"CML_CONTEXT="+ctxName,
+	)
+	sub.Stdin = os.Stdin
+	sub.Stdout = os.Stdout
+	sub.Stderr = os.Stderr
+
+	// Forward SIGINT to the subshell rather than letting it kill us directly;
+	// we want to clean up the tunnel in the deferred handler either way.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		for sig := range sigCh {
+			if sub.Process != nil {
+				_ = sub.Process.Signal(sig)
+			}
+		}
+	}()
+
+	if err := sub.Run(); err != nil {
+		// Non-zero exit from the subshell (e.g. user ran a command that failed)
+		// isn't a cml error; only surface startup failures.
+		if _, ok := err.(*exec.ExitError); !ok {
+			return fmt.Errorf("subshell: %w", err)
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "→ Tunnel closed.")
+	return nil
+}
+
+// waitForPort polls 127.0.0.1:<port> until a TCP connection succeeds or the timeout expires.
+func waitForPort(ctx context.Context, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		conn, err := net.DialTimeout("tcp", addr, 300*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for %s: %w", addr, err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 func printK8sTable(clusters []types.K8sCluster) {

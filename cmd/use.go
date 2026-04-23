@@ -75,6 +75,7 @@ var (
 	useAddProject     string
 	useAddRegion      string
 	useAddBastion     string
+	useAddBastionPort int
 	useAddBastionProj string
 	useAddBastionZone string
 	useAddBastionIAP  bool
@@ -84,6 +85,7 @@ var (
 	useUpdateProject     string
 	useUpdateRegion      string
 	useUpdateBastion     string
+	useUpdateBastionPort int
 	useUpdateBastionProj string
 	useUpdateBastionZone string
 	useUpdateBastionIAP  bool
@@ -99,7 +101,8 @@ func init() {
 	useUpdateCmd.Flags().StringVar(&useUpdateProfile, "profile", "", "AWS profile name")
 	useUpdateCmd.Flags().StringVar(&useUpdateProject, "project", "", "GCP project ID")
 	useUpdateCmd.Flags().StringVar(&useUpdateRegion, "region", "", "Region or zone")
-	useUpdateCmd.Flags().StringVar(&useUpdateBastion, "bastion", "", "GCP bastion instance name (set to \"\" to remove)")
+	useUpdateCmd.Flags().StringVar(&useUpdateBastion, "bastion", "", "Bastion (AWS: EC2 instance ID; GCP: VM name). Set to \"\" to remove")
+	useUpdateCmd.Flags().IntVar(&useUpdateBastionPort, "bastion-port", 0, "Remote port on bastion (AWS k8s connect; default 8888)")
 	useUpdateCmd.Flags().StringVar(&useUpdateBastionProj, "bastion-project", "", "GCP project hosting the bastion")
 	useUpdateCmd.Flags().StringVar(&useUpdateBastionZone, "bastion-zone", "", "Zone of the bastion instance")
 	useUpdateCmd.Flags().BoolVar(&useUpdateBastionIAP, "bastion-iap", false, "Use --tunnel-through-iap for bastion access")
@@ -108,7 +111,8 @@ func init() {
 	useAddCmd.Flags().StringVar(&useAddProfile, "profile", "", "AWS profile name")
 	useAddCmd.Flags().StringVar(&useAddProject, "project", "", "GCP project ID")
 	useAddCmd.Flags().StringVar(&useAddRegion, "region", "", "Region or zone")
-	useAddCmd.Flags().StringVar(&useAddBastion, "bastion", "", "GCP bastion instance name")
+	useAddCmd.Flags().StringVar(&useAddBastion, "bastion", "", "Bastion (AWS: EC2 instance ID; GCP: VM name)")
+	useAddCmd.Flags().IntVar(&useAddBastionPort, "bastion-port", 0, "Remote port on bastion (AWS k8s connect; default 8888)")
 	useAddCmd.Flags().StringVar(&useAddBastionProj, "bastion-project", "", "GCP project hosting the bastion (defaults to --project)")
 	useAddCmd.Flags().StringVar(&useAddBastionZone, "bastion-zone", "", "Zone of the bastion instance (defaults to --region)")
 	useAddCmd.Flags().BoolVar(&useAddBastionIAP, "bastion-iap", false, "Use --tunnel-through-iap for bastion access")
@@ -200,6 +204,10 @@ func runUseAdd(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("--profile is required for AWS contexts")
 		}
 		ctx.Profile = useAddProfile
+		if useAddBastion != "" {
+			ctx.Bastion = useAddBastion
+			ctx.BastionPort = useAddBastionPort
+		}
 	case "gcp":
 		if useAddProject == "" {
 			return fmt.Errorf("--project is required for GCP contexts")
@@ -252,6 +260,9 @@ func runUseUpdate(cmd *cobra.Command, args []string) error {
 	}
 	if changed("bastion") {
 		ctx.Bastion = useUpdateBastion
+	}
+	if changed("bastion-port") {
+		ctx.BastionPort = useUpdateBastionPort
 	}
 	if changed("bastion-project") {
 		ctx.BastionProject = useUpdateBastionProj
