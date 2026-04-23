@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
+
 	pkgtypes "github.com/vietdv277/cumulus/pkg/types"
 )
 

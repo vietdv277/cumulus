@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
 	awscmd "github.com/vietdv277/cumulus/cmd/aws"
 	"github.com/vietdv277/cumulus/internal/config"
 )
