@@ -15,16 +15,16 @@ const (
 
 // ProfileModel represents the bubbletea model for profile selection
 type ProfileModel struct {
-	profiles     []pkgtypes.AWSProfile
-	filtered     []pkgtypes.AWSProfile
-	cursor       int
-	offset       int
-	search       string
-	selected     *pkgtypes.AWSProfile
-	quitting     bool
-	cancelled    bool
-	termWidth    int
-	contentWidth int
+	profiles      []pkgtypes.AWSProfile
+	filtered      []pkgtypes.AWSProfile
+	cursor        int
+	offset        int
+	search        string
+	selected      *pkgtypes.AWSProfile
+	quitting      bool
+	cancelled     bool
+	termWidth     int
+	contentWidth  int
 	activeProfile string
 }
 

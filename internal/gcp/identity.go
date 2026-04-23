@@ -83,9 +83,9 @@ func GetCallerIdentity(project, region string) (*CallerIdentity, error) {
 
 // Credential type constants, matching the "type" field in ADC JSON files.
 const (
-	credTypeServiceAccount            = "service_account"
-	credTypeAuthorizedUser            = "authorized_user"
-	credTypeExternalAccount           = "external_account"
+	credTypeServiceAccount             = "service_account"
+	credTypeAuthorizedUser             = "authorized_user"
+	credTypeExternalAccount            = "external_account"
 	credTypeImpersonatedServiceAccount = "impersonated_service_account"
 )
 

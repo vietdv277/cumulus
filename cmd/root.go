@@ -53,7 +53,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	//Global persistent flags (available to all subcommands)
+	// Global persistent flags (available to all subcommands)
 	rootCmd.PersistentFlags().StringVarP(&profile, "profile", "p", "", "AWS profile to use")
 	rootCmd.PersistentFlags().StringVarP(&region, "region", "r", "", "AWS region to use")
 

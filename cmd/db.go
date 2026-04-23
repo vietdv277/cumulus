@@ -58,10 +58,10 @@ Examples:
 }
 
 var (
-	dbListEngine     string
-	dbConnectVia     string
-	dbConnectLocal   int
-	dbContextFlag    string
+	dbListEngine   string
+	dbConnectVia   string
+	dbConnectLocal int
+	dbContextFlag  string
 )
 
 func init() {

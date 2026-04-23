@@ -44,11 +44,11 @@ type Defaults struct {
 
 // CMLConfig represents the main configuration file (~/.config/cml/config.yaml)
 type CMLConfig struct {
-	CurrentContext string                  `yaml:"current_context,omitempty"`
-	Contexts       map[string]*Context     `yaml:"contexts,omitempty"`
-	Aliases        map[string]string       `yaml:"aliases,omitempty"`
+	CurrentContext string                   `yaml:"current_context,omitempty"`
+	Contexts       map[string]*Context      `yaml:"contexts,omitempty"`
+	Aliases        map[string]string        `yaml:"aliases,omitempty"`
 	Tunnels        map[string]*TunnelConfig `yaml:"tunnels,omitempty"`
-	Defaults       *Defaults               `yaml:"defaults,omitempty"`
+	Defaults       *Defaults                `yaml:"defaults,omitempty"`
 }
 
 // GetCMLConfigDir returns ~/.config/cml, respecting $XDG_CONFIG_HOME if set.
