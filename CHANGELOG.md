@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-04-23
+
+### Added
+- `cml k8s connect <cluster>` — opens an SSM port-forwarding session to the
+  AWS context's bastion and launches an interactive subshell with
+  `HTTPS_PROXY` set, so `kubectl` reaches a private EKS API through the
+  bastion. Exiting the subshell tears the tunnel down. AWS only; GCP
+  contexts return a clear error.
+- `bastion` / `bastion_port` fields on AWS contexts, and matching
+  `--bastion` / `--bastion-port` flags on `cml use add` and `cml use update`.
+
+### Changed
+- Extracted `AWSVMProvider.StartPortForward` from `Tunnel` so `vm tunnel`
+  and `k8s connect` share the SSM session plumbing. No behaviour change
+  for `vm tunnel`.
+
 ## [0.9.1] — 2026-04-20
 
 ### Changed

@@ -71,6 +71,8 @@ contexts:
     provider: aws
     profile: prod-sso
     region: us-east-1
+    bastion: i-013xxxxx            # optional EC2 instance ID (used by k8s connect)
+    bastion_port: 8888             # optional; remote port on bastion (default 8888)
   gcp:staging:
     provider: gcp
     project: mycompany-staging
@@ -117,6 +119,13 @@ Read-only reader for `~/.kube/config` (or `KUBECONFIG`). Extracts contexts and
 current-context for `cml k8s contexts`. Writing is delegated to cloud CLIs
 (`aws eks update-kubeconfig`, `gcloud container clusters get-credentials`) — do not
 add kubeconfig mutation here.
+
+`cml k8s connect <cluster>` (AWS only) uses `AWSVMProvider.StartPortForward`
+(in `internal/aws/vm.go`) to open an SSM port-forward to the context's
+`bastion` instance on `bastion_port`, then spawns `$SHELL -i` with
+`HTTPS_PROXY`/`HTTP_PROXY` set. On subshell exit (or SIGINT), the tunnel
+is torn down in the deferred handler. `StartPortForward` is shared with
+`vm tunnel`.
 
 ### AWS Client (`internal/aws/client.go`)
 
@@ -173,6 +182,7 @@ cml
 │   ├── list               # List EKS / GKE clusters in context
 │   ├── get <name>         # Cluster details
 │   ├── use <name>         # Update kubeconfig + switch kubectl context
+│   ├── connect <name>     # AWS: SSM tunnel to context bastion + subshell with HTTPS_PROXY
 │   └── contexts           # List kubectl contexts
 ├── use                    # Context management
 │   ├── <context>          # Switch active context
