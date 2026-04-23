@@ -7,6 +7,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
+
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/ui"
@@ -58,10 +59,10 @@ Examples:
 }
 
 var (
-	dbListEngine     string
-	dbConnectVia     string
-	dbConnectLocal   int
-	dbContextFlag    string
+	dbListEngine   string
+	dbConnectVia   string
+	dbConnectLocal int
+	dbContextFlag  string
 )
 
 func init() {

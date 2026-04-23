@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/spf13/cobra"
+
 	internalConfig "github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/ui"
 )

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
 	awscmd "github.com/vietdv277/cumulus/cmd/aws"
 	"github.com/vietdv277/cumulus/internal/config"
 )
@@ -53,7 +54,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	//Global persistent flags (available to all subcommands)
+	// Global persistent flags (available to all subcommands)
 	rootCmd.PersistentFlags().StringVarP(&profile, "profile", "p", "", "AWS profile to use")
 	rootCmd.PersistentFlags().StringVarP(&region, "region", "r", "", "AWS region to use")
 

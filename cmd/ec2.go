@@ -7,14 +7,15 @@ import (
 	"os/exec"
 
 	"github.com/spf13/cobra"
+
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
 
 var ec2Cmd = &cobra.Command{
-	Use: "ec2",
+	Use:   "ec2",
 	Short: "Manage EC2 instances",
-	Long: `Perform various operations on EC2 instances such as listing, starting, stopping, and terminating instances.`,
+	Long:  `Perform various operations on EC2 instances such as listing, starting, stopping, and terminating instances.`,
 }
 
 var ec2LsCmd = &cobra.Command{
@@ -86,7 +87,7 @@ func runEC2List(cmd *cobra.Command, args []string) error {
 	// Build input
 	input := &aws.ListInstanceInput{
 		NamePattern: namePattern,
-		ASGName: asgName,
+		ASGName:     asgName,
 	}
 
 	if showAll {

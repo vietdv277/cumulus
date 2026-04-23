@@ -1,3 +1,7 @@
+// Package provider defines cloud-agnostic interfaces for resource management.
+// Each provider (AWS, GCP) implements the relevant subset of these interfaces:
+// VMProvider, SecretsProvider, DBProvider, StorageProvider, LogsProvider, and
+// K8sProvider. CloudProvider aggregates them.
 package provider
 
 import (
@@ -9,18 +13,18 @@ import (
 
 // Common errors
 var (
-	ErrNotSupported    = errors.New("feature not supported by this provider")
-	ErrNotFound        = errors.New("resource not found")
-	ErrNotConfigured   = errors.New("provider not configured")
-	ErrAuthFailed      = errors.New("authentication failed")
+	ErrNotSupported     = errors.New("feature not supported by this provider")
+	ErrNotFound         = errors.New("resource not found")
+	ErrNotConfigured    = errors.New("provider not configured")
+	ErrAuthFailed       = errors.New("authentication failed")
 	ErrPermissionDenied = errors.New("permission denied")
 )
 
 // VMFilter contains filters for VM listing
 type VMFilter struct {
-	State   string            // running, stopped, etc.
-	Name    string            // Name pattern
-	Tags    map[string]string // Tag filters
+	State string            // running, stopped, etc.
+	Name  string            // Name pattern
+	Tags  map[string]string // Tag filters
 }
 
 // VMProvider defines the interface for VM operations

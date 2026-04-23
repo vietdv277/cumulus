@@ -19,8 +19,9 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Linker flags for version injection
-LDFLAGS := -ldflags "-X github.com/vietdv277/cumulus/cmd.Version=$(VERSION) \
+# Linker flags: strip symbols (-s -w) to match release builds + inject version metadata
+LDFLAGS := -ldflags "-s -w \
+                     -X github.com/vietdv277/cumulus/cmd.Version=$(VERSION) \
                      -X github.com/vietdv277/cumulus/cmd.Commit=$(COMMIT) \
                      -X github.com/vietdv277/cumulus/cmd.BuildDate=$(BUILD_DATE)"
 

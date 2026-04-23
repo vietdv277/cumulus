@@ -1,3 +1,5 @@
+// Package gcp implements the CloudProvider interfaces for Google Cloud Platform.
+// Authentication uses Application Default Credentials (ADC).
 package gcp
 
 import (

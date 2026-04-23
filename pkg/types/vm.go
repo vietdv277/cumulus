@@ -1,3 +1,5 @@
+// Package types holds shared domain types (VM, Secret, DB, Bucket, Cluster, …)
+// used by the provider interfaces and their cloud-specific implementations.
 package types
 
 import "time"
