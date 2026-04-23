@@ -20,12 +20,6 @@ All imports must use this full path.
 - GCP SDK: `cloud.google.com/go/compute` + `google.golang.org/api`
 - TUI: charmbracelet/bubbletea (interactive selectors) + charmbracelet/lipgloss (styling)
 
-## Dev Container
-
-A `.devcontainer/` setup is provided for VS Code / GitHub Codespaces. The container runs as user `vscode`, sets `bypassPermissions` for Claude Code, and mounts `~/.gitconfig` read-only from the host (git uses `~/.gitconfig.local` inside the container via `GIT_CONFIG_GLOBAL`).
-
-On creation, `post_install.py` runs to: bypass Claude onboarding, configure tmux, fix volume ownership, and set up a global gitignore. Pass `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` in your local environment to have them forwarded into the container.
-
 ## Build & Test
 
 > There are currently no `_test.go` files in the repository. The test commands below are valid but will report nothing to test.
