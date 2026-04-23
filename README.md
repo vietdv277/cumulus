@@ -157,6 +157,9 @@ contexts:
     provider: aws
     profile: prod-sso
     region: us-east-1
+    # Optional — used by `cml k8s connect` to tunnel through an SSM bastion
+    bastion: i-013xxxxx
+    bastion_port: 8888
   gcp:prod:
     provider: gcp
     project: my-project
@@ -263,6 +266,35 @@ cml k8s get my-cluster          # cluster details
 cml k8s use my-cluster          # update kubeconfig and switch kubectl context
 cml k8s contexts                # list kubectl contexts (current marked)
 ```
+
+### Private EKS via SSM bastion (`k8s connect`)
+
+For EKS clusters whose API server isn't reachable from your laptop (private
+endpoint), `cml k8s connect` opens an SSM port-forwarding session to the
+context's bastion EC2 instance and drops you into an interactive subshell
+with `HTTPS_PROXY` set. `kubectl` inside the subshell reaches the cluster
+through the bastion. Exiting the subshell tears the tunnel down.
+
+```bash
+# Configure the bastion on the AWS context (one-time)
+cml use update aws:prod --bastion i-013xxxxx --bastion-port 8888
+
+# Make sure kubeconfig is set up for the cluster
+cml k8s use prod-cluster
+
+# Open a proxied shell
+cml k8s connect prod-cluster
+# → Starting SSM tunnel to i-013xxxxx:8888 (local :8888)
+# → Proxy ready at http://localhost:8888
+# → Entering subshell (HTTPS_PROXY set). Type 'exit' to disconnect.
+$ kubectl get nodes
+...
+$ exit
+# → Tunnel closed.
+```
+
+Flags: `--bastion` / `--local-port` override the context defaults per
+invocation. AWS-only for now; GCP contexts return a clear error.
 
 ## AWS-specific commands
 
