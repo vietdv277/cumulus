@@ -18,11 +18,12 @@ type Context struct {
 	Profile  string `yaml:"profile,omitempty"` // AWS profile name
 	Project  string `yaml:"project,omitempty"` // GCP project ID
 	Region   string `yaml:"region,omitempty"`  // Region or zone
-	// GCP bastion host settings
-	Bastion        string `yaml:"bastion,omitempty"`         // bastion instance name
-	BastionProject string `yaml:"bastion_project,omitempty"` // project hosting the bastion (defaults to Project)
-	BastionZone    string `yaml:"bastion_zone,omitempty"`    // zone of the bastion (defaults to Region)
-	BastionIAP     bool   `yaml:"bastion_iap,omitempty"`     // use --tunnel-through-iap
+	// Bastion host settings (AWS: EC2 instance ID; GCP: VM name)
+	Bastion        string `yaml:"bastion,omitempty"`
+	BastionPort    int    `yaml:"bastion_port,omitempty"`    // remote port on bastion (AWS k8s connect; default 8888)
+	BastionProject string `yaml:"bastion_project,omitempty"` // GCP only
+	BastionZone    string `yaml:"bastion_zone,omitempty"`    // GCP only
+	BastionIAP     bool   `yaml:"bastion_iap,omitempty"`     // GCP only: --tunnel-through-iap
 }
 
 // TunnelConfig represents a saved tunnel configuration
