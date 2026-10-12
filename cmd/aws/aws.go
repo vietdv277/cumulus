@@ -37,7 +37,16 @@ func init() {
 }
 
 // resolveAWSContext resolves the -c/--context flag and requires an AWS context.
-func resolveAWSContext() (*internalConfig.Context, string, error) {
+// Legacy -p/--profile and -r/--region are rejected so they can never be silently
+// ignored; rootCmd is out of reach here, but inherited persistent flags are
+// visible on the running command.
+func resolveAWSContext(cmd *cobra.Command) (*internalConfig.Context, string, error) {
+	for _, name := range []string{"profile", "region"} {
+		if cmd.Flags().Changed(name) {
+			return nil, "", fmt.Errorf("--%s is not supported by context-aware commands; use --context <name> or 'cml use <context>'", name)
+		}
+	}
+
 	ctxConfig, ctxName, err := internalConfig.ResolveContext(awsContextFlag)
 	if err != nil {
 		return nil, "", err

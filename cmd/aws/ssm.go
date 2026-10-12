@@ -88,10 +88,10 @@ func init() {
 	ssmParamSetCmd.Flags().BoolVar(&ssmParamSecure, "secure", false, "Create as SecureString")
 }
 
-func getSSMClient() (*ssm.Client, error) {
+func getSSMClient(cmd *cobra.Command) (*ssm.Client, error) {
 	ctx := context.Background()
 
-	ctxConfig, _, err := resolveAWSContext()
+	ctxConfig, _, err := resolveAWSContext(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func runSSMParamList(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	client, err := getSSMClient()
+	client, err := getSSMClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	client, err := getSSMClient()
+	client, err := getSSMClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 func runSSMParamSet(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	client, err := getSSMClient()
+	client, err := getSSMClient(cmd)
 	if err != nil {
 		return err
 	}

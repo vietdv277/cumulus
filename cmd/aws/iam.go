@@ -54,8 +54,8 @@ func runIAMWhoami(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	// Get the resolved context (flag wins over current)
-	ctxConfig, ctxName, err := resolveAWSContext()
+	// Get the resolved context (flag wins over current; legacy flags rejected)
+	ctxConfig, ctxName, err := resolveAWSContext(cmd)
 	if err != nil {
 		return err
 	}

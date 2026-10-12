@@ -112,6 +112,10 @@ func runTunnelList(cmd *cobra.Command, args []string) error {
 var tunnelProviderFactory = buildVMProvider
 
 func runTunnelStart(cmd *cobra.Command, args []string) error {
+	if err := rejectLegacyFlags(); err != nil {
+		return err
+	}
+
 	tunnel, err := config.GetTunnelConfig(args[0])
 	if err != nil {
 		return err

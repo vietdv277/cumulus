@@ -379,6 +379,10 @@ cml aws ssm param set  /my/param value
 cml aws iam whoami
 ```
 
+Both commands accept `-c/--context <name-or-alias>` to operate in a specific
+context instead of the current one. `-p/--profile` and `-r/--region` are not
+supported here — pass them to the context instead (`cml use update …`).
+
 ## Legacy commands
 
 These predated the context system and are still available:

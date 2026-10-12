@@ -204,3 +204,47 @@ func TestTunnelRmRemovesSavedTunnel(t *testing.T) {
 		t.Fatal("expected error removing an unknown tunnel")
 	}
 }
+
+// executeForError runs rootCmd with the given args and returns cobra's error,
+// with usage/error printing silenced; resets the legacy flags afterwards.
+func executeForError(t *testing.T, args []string) error {
+	t.Helper()
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	t.Cleanup(func() {
+		rootCmd.SilenceUsage = false
+		rootCmd.SilenceErrors = false
+		resetLegacyFlags()
+	})
+
+	rootCmd.SetArgs(args)
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error for %v", args)
+	}
+	return err
+}
+
+func TestTunnelStartRejectsProfileFlag(t *testing.T) {
+	setTestConfig(t, tunnelTestConfigYAML)
+
+	// "nope" is not a saved tunnel either — the exact guard message proves the
+	// rejection happened before any config lookup or provider creation.
+	err := executeForError(t, []string{"tunnel", "start", "nope", "-p", "dev"})
+	want := "--profile is not supported by context-aware commands; use --context <name> or 'cml use <context>'"
+	if err.Error() != want {
+		t.Fatalf("err = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestAWSWhoamiRejectsRegionFlag(t *testing.T) {
+	setTestConfig(t, tunnelTestConfigYAML)
+
+	// The exact guard message proves the failure happened before any AWS
+	// client was built (no network call).
+	err := executeForError(t, []string{"aws", "iam", "whoami", "-r", "us-west-2"})
+	want := "--region is not supported by context-aware commands; use --context <name> or 'cml use <context>'"
+	if err.Error() != want {
+		t.Fatalf("err = %q, want %q", err.Error(), want)
+	}
+}
