@@ -67,10 +67,17 @@ func init() {
 }
 
 func initConfig() {
-	// Migrate from legacy formats if needed (oldest first)
-	_ = config.MigrateFromMacOSConfig()   // ~/Library/Application Support/cml/ → XDG path
-	_ = config.MigrateFromOldConfig()     // ~/.cml/config.yaml → XDG path
-	_ = config.MigrateFromDotFileConfig() // ~/.cml.yaml        → XDG path
+	// Migrate from legacy formats if needed (oldest first). A failed
+	// migration is a warning only; it must never block the CLI.
+	if err := config.MigrateFromMacOSConfig(); err != nil { // ~/Library/Application Support/cml/ → XDG path
+		fmt.Fprintf(os.Stderr, "cml: warning: config migration skipped: %v\n", err)
+	}
+	if err := config.MigrateFromOldConfig(); err != nil { // ~/.cml/config.yaml → XDG path
+		fmt.Fprintf(os.Stderr, "cml: warning: config migration skipped: %v\n", err)
+	}
+	if err := config.MigrateFromDotFileConfig(); err != nil { // ~/.cml.yaml → XDG path
+		fmt.Fprintf(os.Stderr, "cml: warning: config migration skipped: %v\n", err)
+	}
 
 	// Read from environment variables
 	viper.SetEnvPrefix("CML")

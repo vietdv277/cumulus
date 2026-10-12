@@ -114,19 +114,54 @@ func LoadCMLConfig() (*CMLConfig, error) {
 	return &cfg, nil
 }
 
-// SaveCMLConfig saves the configuration to ~/.config/cml/config.yaml
-func SaveCMLConfig(cfg *CMLConfig) error {
-	if err := os.MkdirAll(GetCMLConfigDir(), 0755); err != nil {
+// writeFileAtomic writes data to path atomically with restrictive
+// permissions: the containing directory is created 0700 and the file is
+// written 0600 via a temp file and rename, which also tightens pre-existing
+// 0644 files. Used by every config write site.
+func writeFileAtomic(path string, data []byte) (err error) {
+	dir := filepath.Dir(path)
+	if err = os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
 
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		if err != nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if _, err = tmp.Write(data); err != nil {
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err = tmp.Chmod(0600); err != nil {
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("sync temp file: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err = os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replace config file: %w", err)
+	}
+	return nil
+}
+
+// SaveCMLConfig saves the configuration to ~/.config/cml/config.yaml
+func SaveCMLConfig(cfg *CMLConfig) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	configPath := GetCMLConfigPath()
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := writeFileAtomic(GetCMLConfigPath(), data); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -265,15 +300,11 @@ func MigrateFromMacOSConfig() error {
 		return nil
 	}
 
-	if err := os.MkdirAll(GetCMLConfigDir(), 0755); err != nil {
-		return fmt.Errorf("create config directory: %w", err)
-	}
-
 	data, err := os.ReadFile(oldPath)
 	if err != nil {
 		return fmt.Errorf("read macOS config: %w", err)
 	}
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := writeFileAtomic(newPath, data); err != nil {
 		return fmt.Errorf("write migrated config: %w", err)
 	}
 
@@ -305,17 +336,12 @@ func MigrateFromDotFileConfig() error {
 		return nil
 	}
 
-	// Ensure destination directory exists
-	if err := os.MkdirAll(GetCMLConfigDir(), 0755); err != nil {
-		return fmt.Errorf("create config directory: %w", err)
-	}
-
 	// Raw byte copy to preserve comments/formatting
 	data, err := os.ReadFile(oldPath)
 	if err != nil {
 		return fmt.Errorf("read legacy config: %w", err)
 	}
-	if err := os.WriteFile(newPath, data, 0644); err != nil {
+	if err := writeFileAtomic(newPath, data); err != nil {
 		return fmt.Errorf("write migrated config: %w", err)
 	}
 
@@ -332,7 +358,7 @@ func MigrateFromDotFileConfig() error {
 func MigrateFromOldConfig() error {
 	oldCfg, err := LoadConfig()
 	if err != nil {
-		return nil // No old config to migrate
+		return fmt.Errorf("read legacy config: %w", err)
 	}
 
 	// Check if old config has any data
@@ -340,24 +366,30 @@ func MigrateFromOldConfig() error {
 		return nil
 	}
 
-	// Load or create new config
+	// Load or create new config; only a missing file means "start empty",
+	// any other load error must abort the migration rather than wipe it.
 	newCfg, err := LoadCMLConfig()
 	if err != nil {
-		newCfg = &CMLConfig{
-			Contexts: make(map[string]*Context),
-			Aliases:  make(map[string]string),
-			Tunnels:  make(map[string]*TunnelConfig),
-			Defaults: &Defaults{Output: "table"},
-		}
+		return fmt.Errorf("load new config: %w", err)
 	}
 
-	// Create a context from the old config
+	// Create a context from the old config; never overwrite an existing
+	// context, only fill the fields it leaves empty.
 	if oldCfg.AWSProfile != "" {
 		contextName := "aws:" + oldCfg.AWSProfile
-		newCfg.Contexts[contextName] = &Context{
-			Provider: "aws",
-			Profile:  oldCfg.AWSProfile,
-			Region:   oldCfg.AWSRegion,
+		if existing, ok := newCfg.Contexts[contextName]; ok {
+			if existing.Profile == "" {
+				existing.Profile = oldCfg.AWSProfile
+			}
+			if existing.Region == "" {
+				existing.Region = oldCfg.AWSRegion
+			}
+		} else {
+			newCfg.Contexts[contextName] = &Context{
+				Provider: "aws",
+				Profile:  oldCfg.AWSProfile,
+				Region:   oldCfg.AWSRegion,
+			}
 		}
 
 		// Set as current if no current context
