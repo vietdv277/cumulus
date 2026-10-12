@@ -443,7 +443,8 @@ invocation. AWS-only for now; GCP contexts return a clear error.
 
 ## Logs
 
-Query or tail CloudWatch log groups from the current AWS context.
+Query or tail logs from the current context: CloudWatch log groups on AWS,
+Cloud Logging log names on GCP.
 
 ```bash
 cml logs list /aws/lambda/            # list log groups by prefix (or all)
@@ -461,8 +462,14 @@ per entry (level is omitted when CloudWatch has none). `-o json` / `-o
 yaml` render the whole query result; while following, only `-o json` is
 supported (NDJSON). `--limit` applies to queries only.
 
-AWS-only for now; GCP contexts return a clear error until the GCP
-Logging provider lands.
+On GCP the target is a log name and `--filter` is a Logging query
+expression, combined with the log name and time window:
+
+```bash
+cml logs list run.googleapis.com                           # log names by prefix
+cml logs run.googleapis.com/stderr --filter 'severity>=ERROR'
+cml logs cloudaudit.googleapis.com/activity --since 1h -f
+```
 
 ## AWS-specific commands
 
