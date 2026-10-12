@@ -503,13 +503,13 @@ SecretValue
 - [x] AWS Secrets Manager implementation
 - [x] GCP Secret Manager implementation
 
-### Phase 4: Storage & Logs — in progress
+### Phase 4: Storage & Logs — complete
 
 - [x] `storage ls/cp/sync/presign` (AWS)
 - [x] S3 implementation
 - [x] GCS implementation (`gs://` paths; sync via `gcloud storage rsync`)
-- [ ] `logs` command with tail mode
-- [ ] CloudWatch / Cloud Logging implementations
+- [x] `logs` command with tail mode (`cml logs`, alias `log`; `logs list`)
+- [x] CloudWatch / Cloud Logging implementations
 
 ### Phase 5: Kubernetes — complete
 
