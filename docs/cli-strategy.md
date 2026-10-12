@@ -409,8 +409,11 @@ Handle features not available in all providers:
 | VM.Tunnel | SSM Port Forward | IAP Tunnel | - |
 | Secrets.List | ✓ | ✓ | - |
 | DB.Connect | Via bastion | Via Cloud SQL Proxy | - |
+| Storage.Presign | SigV4 | V4 signed URL | GCP needs service-account key credentials |
+| Secrets.Delete | 7-day recovery (`--force` immediate) | Permanent | Prompt states it is permanent |
 
-GCP gaps (secrets, db, storage) return a clear "not supported for GCP" error with an alternative.
+Backend-specific options on the wrong provider (`--ssm-only`, `ssm:`/`sm:` prefixes and `--via` on GCP)
+return a clear error.
 
 ---
 
@@ -490,21 +493,21 @@ SecretValue
 - [x] `vm tunnel` (port forwarding)
 - [x] `vm start/stop/reboot`
 
-### Phase 3: Database & Secrets — in progress
+### Phase 3: Database & Secrets — complete
 
 - [x] `db list`, `db get`, and `db connect` (AWS)
 - [x] RDS implementation (list/get + SSM port-forward via bastion for connect)
-- [ ] Cloud SQL implementation
+- [x] Cloud SQL implementation (list/get + `cloud-sql-proxy` for connect)
 - [x] `secrets list/get/set`
 - [x] SSM Parameter Store implementation
 - [x] AWS Secrets Manager implementation
-- [ ] GCP Secret Manager implementation
+- [x] GCP Secret Manager implementation
 
 ### Phase 4: Storage & Logs — in progress
 
 - [x] `storage ls/cp/sync/presign` (AWS)
 - [x] S3 implementation
-- [ ] GCS implementation
+- [x] GCS implementation (`gs://` paths; sync via `gcloud storage rsync`)
 - [ ] `logs` command with tail mode
 - [ ] CloudWatch / Cloud Logging implementations
 
@@ -519,8 +522,10 @@ SecretValue
 - [x] Shell completions (zsh, bash, fish) — provided by Cobra's built-in `cml completion`
 - [x] `--output json/yaml/table` flag
 - [x] Alias resolution in config layer
-- [ ] User-facing alias management commands
-- [ ] `doctor` command
+- [x] User-facing alias management commands (`cml alias list/add/rm`)
+- [x] `doctor` command
+- [x] Saved tunnels (`vm tunnel --save`, `cml tunnel list/start/rm`)
+- [x] `--context` on `cml aws ssm/iam`
 - [ ] Error handling improvements
 - [ ] Documentation
 

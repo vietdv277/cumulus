@@ -143,9 +143,10 @@ The config file is written atomically (temp file + rename) with mode 0600, in a 
 All cloud resources are abstracted behind interfaces: `VMProvider`, `SecretsProvider`,
 `DBProvider`, `StorageProvider`, `LogsProvider`, `K8sProvider`. The `CloudProvider`
 interface aggregates them all. AWS implementations (vm, secrets, db, storage, k8s) live
-in `internal/aws/`; GCP implementations (vm, k8s) live in `internal/gcp/`. GCP secrets, db and
-storage are not implemented: the provider getters in `cmd/` return a "not yet implemented for
-GCP" error.
+in `internal/aws/`; GCP implementations (vm, secrets, db, storage, k8s) live in `internal/gcp/`.
+GCP secrets, db and storage use the REST clients in `google.golang.org/api` (Secret Manager,
+Cloud SQL Admin, Cloud Storage); `db connect` on GCP runs `cloud-sql-proxy`, and GCS presign
+signs V4 URLs locally from service-account key credentials.
 `LogsProvider` has no implementation yet.
 
 ### Kubeconfig (`internal/kubeconfig/`)

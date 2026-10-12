@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Global `-o/--output table|json|yaml` on every data-printing command; honours
+  `defaults.output`. With json/yaml stdout carries only the document and empty
+  results print `[]`.
+- `cml alias list/add/rm` to manage context aliases.
+- `cml doctor`: read-only checks for config, contexts, aliases, tunnels and the
+  required CLIs; `--online` adds a credentials check. Exits 1 on failures.
+- Saved tunnels: `cml vm tunnel … --save <name>` and `cml tunnel list/start/rm`;
+  a saved tunnel always starts in its own context.
+- `-c/--context` on `cml aws ssm` and `cml aws iam`.
+- GCP Secret Manager behind `cml secrets` (deletion on GCP is permanent).
+- GCP Cloud SQL behind `cml db` (`db connect` runs `cloud-sql-proxy`).
+- GCS behind `cml storage` with `gs://` paths: ls, cp, sync (via
+  `gcloud storage rsync`) and presign (V4, service-account key credentials).
 - `--yes/-y` and a confirmation prompt on `vm stop`, `vm reboot`, the interactive
   Stop action in `vm list -i`, `secrets delete` and `storage sync --delete`.
   Without a TTY and without `--yes` these commands refuse instead of proceeding.
