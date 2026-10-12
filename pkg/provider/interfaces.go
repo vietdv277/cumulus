@@ -7,6 +7,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/vietdv277/cumulus/pkg/types"
 )
@@ -144,21 +145,26 @@ type SyncOptions struct {
 	DryRun bool // Don't actually copy
 }
 
-// LogsProvider defines the interface for log operations
+// LogsProvider defines the interface for log operations. A target is a
+// CloudWatch log group (AWS) or a log name (GCP).
 type LogsProvider interface {
-	// Tail streams logs from a target
-	Tail(ctx context.Context, target string, opts *LogsOptions) error
+	// ListTargets returns the targets whose name starts with prefix.
+	ListTargets(ctx context.Context, prefix string) ([]types.LogTarget, error)
 
-	// Query queries logs
+	// Query returns entries newer than opts.Since, oldest first, at most opts.Limit.
 	Query(ctx context.Context, target string, opts *LogsOptions) ([]types.LogEntry, error)
+
+	// Tail emits entries newer than opts.Since, then new ones as they arrive,
+	// until ctx is cancelled or emit returns an error.
+	Tail(ctx context.Context, target string, opts *LogsOptions, emit func(types.LogEntry) error) error
 }
 
 // LogsOptions contains options for log operations
 type LogsOptions struct {
-	Follow bool   // Tail mode
-	Since  string // Time range (e.g., "1h", "30m")
-	Filter string // Filter pattern
-	Limit  int    // Max entries
+	Since        time.Duration // How far back to start
+	Filter       string        // Provider-native filter (CloudWatch pattern / Logging query)
+	Limit        int           // Max entries for Query; 0 means provider default
+	PollInterval time.Duration // Tail polling interval; 0 means provider default
 }
 
 // K8sProvider defines the interface for Kubernetes operations
