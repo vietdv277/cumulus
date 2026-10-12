@@ -335,16 +335,21 @@ cml secrets set  /app/db-password s3cr3t  # create or update
 cml secrets delete /app/old-param       # delete (asks for confirmation)
 ```
 
-Routing: names starting with `/` go to SSM Parameter Store, everything else to
+Routing (AWS): names starting with `/` go to SSM Parameter Store, everything else to
 Secrets Manager. Force a backend with an explicit `ssm:` or `sm:` prefix
 (`cml secrets get sm:/prod/api-key`); the prefix is stripped from the name.
 Without a prefix, `get` falls back to SSM when the secret is not found in
 Secrets Manager; `delete` never touches an SSM parameter behind a plain name —
 it errors and points at the `ssm:` prefix instead.
 
+On GCP, Secret Manager is the only backend: `--ssm-only`/`--sm-only` and the
+`ssm:`/`sm:` prefixes are AWS-only and rejected with a clear error.
+
 `secrets delete` asks for confirmation. Secrets Manager secrets stay recoverable
 for 7 days after deletion unless `--force` is passed; SSM parameters are deleted
-immediately and cannot be recovered. Pass `--yes` to skip the prompt in scripts.
+immediately and cannot be recovered. On GCP there is no recovery window:
+deletion is permanent (the prompt says so, and `--force` changes nothing).
+Pass `--yes` to skip the prompt in scripts.
 
 ## Databases
 
@@ -362,6 +367,13 @@ cml db connect prod-pg --via i-0abc123 --local-port 5432
 # (cml use update aws:prod --bastion i-013xxxxx)
 cml db connect prod-pg
 ```
+
+GCP Cloud SQL: `list`/`get` report the instance's `databaseVersion` as engine and
+version (`POSTGRES_15` → postgres 15); the endpoint shown is the instance's
+connection name. `connect` runs [cloud-sql-proxy](https://cloud.google.com/sql/docs/mysql/sql-proxy)
+against the connection name (it must be on your PATH) and defaults the local
+port by engine (postgres 5432, mysql 3306, sqlserver 1433); `--via` is not
+supported on GCP.
 
 ## Object storage
 

@@ -233,15 +233,15 @@ cml
 │   ├── start <name>       # Start a saved tunnel with its saved context (--local-port)
 │   └── rm <name>          # Remove a saved tunnel
 │   ├── start/stop/reboot  # Lifecycle (stop/reboot confirm; --yes)
-├── secrets                # Unified secrets (SSM + Secrets Manager)
-│   ├── list               # List secrets (--ssm-only / --sm-only)
-│   ├── get <name>         # Get secret value (ssm:/sm: prefixes force the backend)
+├── secrets                # Unified secrets (AWS: SSM + Secrets Manager; GCP: Secret Manager)
+│   ├── list               # List secrets (--ssm-only / --sm-only, AWS only)
+│   ├── get <name>         # Get secret value (ssm:/sm: prefixes force the backend, AWS only)
 │   ├── set <name> <val>   # Create/update secret
-│   └── delete <name>      # Delete secret (confirms; --yes, --force = no recovery window)
-├── db                     # Managed databases (AWS RDS; GCP Cloud SQL not implemented)
+│   └── delete <name>      # Delete secret (confirms; --yes; AWS SM --force = no recovery window, GCP permanent)
+├── db                     # Managed databases (AWS RDS; GCP Cloud SQL)
 │   ├── list               # List databases (--engine filter)
 │   ├── get <name>         # Details
-│   └── connect <name>     # Port-forward tunnel (--via <instance-id>, else context bastion)
+│   └── connect <name>     # AWS: port-forward via bastion (--via <instance-id>); GCP: cloud-sql-proxy
 ├── storage (s3)           # Object storage (S3; GCS not implemented); paths use s3://bucket/key
 │   ├── ls [s3://b [pfx]]  # List buckets, or objects under prefix
 │   ├── cp <src> <dst>     # Copy one object (local ↔ remote, s3 → s3; ≤ 5 GiB)

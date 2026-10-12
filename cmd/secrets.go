@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
+	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -159,7 +160,21 @@ func getSecretsProvider(ctx context.Context) (provider.SecretsProvider, error) {
 		return aws.NewSecretsProvider(client, ssmClient, smClient, ctxConfig.Profile, ctxConfig.Region), nil
 
 	case "gcp":
-		return nil, fmt.Errorf("GCP Secrets provider not yet implemented")
+		// Secret Manager is GCP's only backend: the AWS-only selection flags
+		// have nothing to select between.
+		if secretsSSMOnly || secretsSMOnly {
+			return nil, fmt.Errorf("--ssm-only/--sm-only apply to AWS backends only: a GCP context uses Secret Manager")
+		}
+
+		client, err := gcp.NewClient(ctx,
+			gcp.WithProject(ctxConfig.Project),
+			gcp.WithRegion(ctxConfig.Region),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GCP client: %w", err)
+		}
+
+		return gcp.NewSecretsProvider(client), nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
@@ -270,8 +285,15 @@ func runSecretsDelete(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	opts := provider.DeleteSecretOptions{Force: secretsDeleteForce}
 
+	// GCP Secret Manager has no recovery window, so the prompt must state
+	// the deletion is permanent.
+	deletePrompt := secretDeletePrompt(name, opts)
+	if _, isGCP := secretsProvider.(*gcp.GCPSecretsProvider); isGCP {
+		deletePrompt = gcpSecretDeletePrompt(name)
+	}
+
 	proceed, err := confirmAction(secretsYes, os.Stdin, os.Stdout,
-		secretDeletePrompt(name, opts),
+		deletePrompt,
 		fmt.Sprintf("refusing to delete %s without confirmation; pass --yes", name),
 	)
 	if err != nil {
@@ -286,14 +308,24 @@ func runSecretsDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// A non-forced Secrets Manager delete only schedules the deletion.
-	if backend, _ := aws.ResolveSecretBackend(name); backend == aws.BackendSM && !opts.Force {
-		fmt.Printf("Secret scheduled for deletion: %s (recoverable within %d days)\n", name, aws.SecretsManagerRecoveryWindowDays)
-		return nil
+	// A non-forced Secrets Manager delete only schedules the deletion; GCP
+	// Secret Manager has no recovery window.
+	if _, isGCP := secretsProvider.(*gcp.GCPSecretsProvider); !isGCP {
+		if backend, _ := aws.ResolveSecretBackend(name); backend == aws.BackendSM && !opts.Force {
+			fmt.Printf("Secret scheduled for deletion: %s (recoverable within %d days)\n", name, aws.SecretsManagerRecoveryWindowDays)
+			return nil
+		}
 	}
 
 	fmt.Printf("Secret deleted: %s\n", name)
 	return nil
+}
+
+// gcpSecretDeletePrompt builds the GCP delete confirmation: GCP Secret Manager
+// has no recovery window, so the prompt says the deletion is permanent.
+func gcpSecretDeletePrompt(name string) string {
+	ctxName := contextNameForPrompt(secretsContextFlag)
+	return fmt.Sprintf("Delete secret %s in context %s? GCP Secret Manager deletion is permanent and cannot be recovered [y/N]", name, ctxName)
 }
 
 // secretDeletePrompt builds the confirmation prompt for secrets delete, stating
