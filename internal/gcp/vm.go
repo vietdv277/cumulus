@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,14 +29,33 @@ func NewVMProvider(client *Client) *GCPVMProvider {
 	return &GCPVMProvider{client: client}
 }
 
-// isZone returns true when s looks like a GCE zone (e.g. "us-central1-a").
-// A zone has at least two hyphens and ends with a letter a–f.
+// Real GCP naming: zones like "us-central1-a", "europe-west1-b", "us-east4-c",
+// "me-central2-a", "africa-south1-a" and multi-word regions like
+// "northamerica-northeast1" must all classify correctly; a value that is
+// neither (e.g. "us-central1-z" or a trailing hyphen) is a user typo.
+var (
+	zoneRE   = regexp.MustCompile(`^[a-z]+(?:-[a-z]+)*[1-9][0-9]*-[a-f]$`)
+	regionRE = regexp.MustCompile(`^[a-z]+(?:-[a-z]+)*[1-9][0-9]*$`)
+)
+
+// isZone returns true when s is a well-formed GCE zone (e.g. "us-central1-a").
 func isZone(s string) bool {
-	if s == "" {
-		return false
+	return zoneRE.MatchString(s)
+}
+
+// isRegion returns true when s is a well-formed GCE region (e.g. "us-central1").
+func isRegion(s string) bool {
+	return regionRE.MatchString(s)
+}
+
+// validateRegion rejects region values that are neither a valid GCP region
+// nor a zone; such values would otherwise filter away every instance and
+// return an empty list with no error.
+func validateRegion(region string) error {
+	if region == "" || isZone(region) || isRegion(region) {
+		return nil
 	}
-	last := s[len(s)-1]
-	return strings.Count(s, "-") >= 2 && last >= 'a' && last <= 'f'
+	return fmt.Errorf("invalid GCP region %q: not a valid region or zone", region)
 }
 
 // newInstancesClient returns an authenticated GCE Instances REST client.
@@ -225,6 +245,9 @@ func (p *GCPVMProvider) List(ctx context.Context, filter *provider.VMFilter) ([]
 
 	gceFilter := buildFilter(filter)
 	region := p.client.Region()
+	if err := validateRegion(region); err != nil {
+		return nil, err
+	}
 
 	var vms []types.VM
 	var listErr error
@@ -237,7 +260,9 @@ func (p *GCPVMProvider) List(ctx context.Context, filter *provider.VMFilter) ([]
 		return nil, listErr
 	}
 	// UMIG enrichment (best-effort; MIG membership already set via metadata)
-	_ = p.enrichWithUMIG(ctx, vms)
+	if err := p.enrichWithUMIG(ctx, vms); err != nil {
+		fmt.Fprintf(os.Stderr, "cml: warning: instance group enrichment skipped: %v\n", err)
+	}
 	return vms, nil
 }
 
@@ -299,6 +324,8 @@ func (p *GCPVMProvider) listAggregated(ctx context.Context, ic *compute.Instance
 
 // Get returns a single GCE instance by name or numeric ID.
 // Because GCE's Get API requires the zone, we discover it via List.
+// GCE names are unique only per zone, so a name that matches in several
+// zones is ambiguous and must be rejected.
 func (p *GCPVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, error) {
 	// List all states so we can find stopped instances too.
 	all, err := p.List(ctx, &provider.VMFilter{State: "all"})
@@ -306,13 +333,28 @@ func (p *GCPVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, er
 		return nil, err
 	}
 
+	var matches []types.VM
 	for i := range all {
 		if all[i].Name == nameOrID || all[i].ID == nameOrID {
-			return &all[i], nil
+			matches = append(matches, all[i])
 		}
 	}
 
-	return nil, fmt.Errorf("instance not found: %s", nameOrID)
+	switch len(matches) {
+	case 1:
+		return &matches[0], nil
+	case 0:
+		return nil, fmt.Errorf("instance not found: %s", nameOrID)
+	default:
+		zones := make([]string, 0, len(matches))
+		for _, m := range matches {
+			zones = append(zones, m.Zone)
+		}
+		return nil, fmt.Errorf(
+			"instance %q exists in multiple zones (%s); set the context region to the instance's zone (e.g. %s) to disambiguate",
+			nameOrID, strings.Join(zones, ", "), zones[0],
+		)
+	}
 }
 
 // resolveVM looks up a VM and returns it with the zone field populated.
@@ -399,6 +441,19 @@ func (p *GCPVMProvider) Reboot(ctx context.Context, nameOrID string) error {
 	return op.Wait(ctx)
 }
 
+// resolveBastionZone picks the zone gcloud should target for the bastion.
+// The context region can stand in for bastion_zone only when it is itself a
+// zone; a plain region (e.g. asia-southeast1) cannot name a bastion VM.
+func resolveBastionZone(bastionZone, region string) (string, error) {
+	if bastionZone != "" {
+		return bastionZone, nil
+	}
+	if isZone(region) {
+		return region, nil
+	}
+	return "", fmt.Errorf("bastion_zone is required when region is not a zone")
+}
+
 // Connect opens an interactive SSH session via `gcloud compute ssh`.
 func (p *GCPVMProvider) Connect(ctx context.Context, nameOrID string) error {
 	vm, err := p.resolveVM(ctx, nameOrID)
@@ -411,9 +466,9 @@ func (p *GCPVMProvider) Connect(ctx context.Context, nameOrID string) error {
 		if bastionProject == "" {
 			bastionProject = p.client.Project()
 		}
-		bastionZone := p.client.BastionZone()
-		if bastionZone == "" {
-			bastionZone = p.client.Region()
+		bastionZone, err := resolveBastionZone(p.client.BastionZone(), p.client.Region())
+		if err != nil {
+			return err
 		}
 		args := []string{
 			"compute",
@@ -466,9 +521,9 @@ func (p *GCPVMProvider) Tunnel(ctx context.Context, nameOrID string, opts *provi
 		if bastionProject == "" {
 			bastionProject = p.client.Project()
 		}
-		bastionZone := p.client.BastionZone()
-		if bastionZone == "" {
-			bastionZone = p.client.Region()
+		bastionZone, err := resolveBastionZone(p.client.BastionZone(), p.client.Region())
+		if err != nil {
+			return err
 		}
 		args := []string{
 			"compute",

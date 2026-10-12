@@ -34,6 +34,11 @@ func (p *GCPK8sProvider) newService(ctx context.Context) (*container.Service, er
 // GKE's Clusters.List with parent "projects/{project}/locations/-" aggregates
 // both regional and zonal clusters in a single call.
 func (p *GCPK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, error) {
+	region := p.client.Region()
+	if err := validateRegion(region); err != nil {
+		return nil, err
+	}
+
 	svc, err := p.newService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create container service: %w", err)
@@ -45,7 +50,13 @@ func (p *GCPK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, 
 		return nil, fmt.Errorf("list GKE clusters: %w", err)
 	}
 
-	region := p.client.Region()
+	// GKE silently omits unreachable locations; surface them so a partial
+	// result is not mistaken for a complete one.
+	if len(resp.MissingZones) > 0 {
+		fmt.Fprintf(os.Stderr, "cml: warning: GKE locations unreachable, results may be incomplete: %s\n",
+			strings.Join(resp.MissingZones, ", "))
+	}
+
 	var clusters []types.K8sCluster
 	for _, c := range resp.Clusters {
 		if !locationMatchesRegion(c.Location, region) {
@@ -56,8 +67,9 @@ func (p *GCPK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, 
 	return clusters, nil
 }
 
-// GetCluster finds a cluster by name and populates node count by summing
-// across all node pools.
+// GetCluster finds a cluster by name and populates node count from the
+// cluster's current node count (autoscaling and regional pools resize over
+// time), falling back to the pool sum of initial counts.
 func (p *GCPK8sProvider) GetCluster(ctx context.Context, nameOrID string) (*types.K8sCluster, error) {
 	svc, err := p.newService(ctx)
 	if err != nil {
@@ -75,8 +87,12 @@ func (p *GCPK8sProvider) GetCluster(ctx context.Context, nameOrID string) (*type
 			continue
 		}
 		cluster := gkeToCluster(c)
-		for _, np := range c.NodePools {
-			cluster.NodeCount += int(np.InitialNodeCount)
+		if c.CurrentNodeCount > 0 {
+			cluster.NodeCount = int(c.CurrentNodeCount)
+		} else {
+			for _, np := range c.NodePools {
+				cluster.NodeCount += int(np.InitialNodeCount)
+			}
 		}
 		return &cluster, nil
 	}
