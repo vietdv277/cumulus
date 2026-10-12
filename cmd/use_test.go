@@ -2,10 +2,33 @@ package cmd
 
 import (
 	"errors"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/vietdv277/cumulus/internal/config"
 )
+
+// captureStdout returns what fn writes to os.Stdout.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+	_ = w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
 
 func TestRunUseNotFoundReturnsError(t *testing.T) {
 	setTestConfig(t, testConfigYAML)
@@ -29,8 +52,13 @@ func TestRunUseNotFoundReturnsError(t *testing.T) {
 func TestRunUseResolvesAlias(t *testing.T) {
 	setTestConfig(t, testConfigYAML)
 
-	if err := runUse(useCmd, []string{"stg"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	var runErr error
+	out := captureStdout(t, func() { runErr = runUse(useCmd, []string{"stg"}) })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+	if want := "Switched to context: gcp:staging (alias stg)"; !strings.Contains(out, want) {
+		t.Fatalf("output = %q, want it to contain %q", out, want)
 	}
 
 	cfg, err := config.LoadCMLConfig()
@@ -39,6 +67,19 @@ func TestRunUseResolvesAlias(t *testing.T) {
 	}
 	if cfg.CurrentContext != "gcp:staging" {
 		t.Fatalf("current context = %q, want gcp:staging", cfg.CurrentContext)
+	}
+}
+
+func TestRunUseFullNamePrintsNoAlias(t *testing.T) {
+	setTestConfig(t, testConfigYAML)
+
+	var runErr error
+	out := captureStdout(t, func() { runErr = runUse(useCmd, []string{"gcp:staging"}) })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+	if !strings.Contains(out, "Switched to context: gcp:staging\n") || strings.Contains(out, "alias") {
+		t.Fatalf("output = %q, want a plain switch message", out)
 	}
 }
 

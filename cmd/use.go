@@ -155,12 +155,16 @@ func runUse(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the context details to show confirmation
-	ctx, _, err := config.GetCurrentContext()
+	ctx, resolvedName, err := config.GetCurrentContext()
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Switched to context: %s\n", contextName)
+	if resolvedName != contextName {
+		fmt.Printf("Switched to context: %s (alias %s)\n", resolvedName, contextName)
+	} else {
+		fmt.Printf("Switched to context: %s\n", resolvedName)
+	}
 	fmt.Printf("  Provider: %s\n", ctx.Provider)
 	if ctx.Profile != "" {
 		fmt.Printf("  Profile:  %s\n", ctx.Profile)
