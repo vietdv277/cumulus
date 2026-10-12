@@ -73,7 +73,7 @@ func (p *GCPDBProvider) Get(ctx context.Context, nameOrID string) (*types.Databa
 		return nil, err
 	}
 
-	inst, err := svc.Instances.Get(p.client.Project(), nameOrID).Do()
+	inst, err := svc.Instances.Get(p.client.Project(), nameOrID).Context(ctx).Do()
 	if err != nil {
 		if isNotFound(err) {
 			return nil, notFoundErr("Cloud SQL instance", nameOrID)

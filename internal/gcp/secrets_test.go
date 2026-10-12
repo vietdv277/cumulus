@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -141,6 +142,45 @@ func TestGCPSecretsGetNotFound(t *testing.T) {
 
 	if _, err := p.Get(context.Background(), "missing"); !errors.Is(err, provider.ErrNotFound) {
 		t.Errorf("Get() error = %v, want provider.ErrNotFound", err)
+	}
+}
+
+// TestGCPSecretsGetAbortsOnCancelledContext proves Get propagates ctx to the
+// API call: the server holds the request in flight, so only cancellation can
+// unblock it.
+func TestGCPSecretsGetAbortsOnCancelledContext(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer func() { close(release); srv.Close() }()
+
+	svc, err := secretmanager.NewService(context.Background(),
+		option.WithEndpoint(srv.URL),
+		option.WithHTTPClient(srv.Client()),
+	)
+	if err != nil {
+		t.Fatalf("building test Secret Manager service: %v", err)
+	}
+	p := NewSecretsProvider(&Client{project: "proj"})
+	p.sm = svc
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := p.Get(ctx, "my-secret")
+		errCh <- err
+	}()
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Get() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Get did not return after context cancellation")
 	}
 }
 

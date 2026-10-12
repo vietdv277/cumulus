@@ -94,7 +94,7 @@ func (p *GCPSecretsProvider) Get(ctx context.Context, name string) (*types.Secre
 		return nil, err
 	}
 
-	resp, err := svc.Projects.Secrets.Versions.Access(secretFullName(p.client.Project(), name) + "/versions/latest").Do()
+	resp, err := svc.Projects.Secrets.Versions.Access(secretFullName(p.client.Project(), name) + "/versions/latest").Context(ctx).Do()
 	if err != nil {
 		if isNotFound(err) {
 			return nil, notFoundErr("secret", name)
@@ -157,7 +157,7 @@ func (p *GCPSecretsProvider) Delete(ctx context.Context, name string, opts provi
 		return err
 	}
 
-	if _, err := svc.Projects.Secrets.Delete(secretFullName(p.client.Project(), name)).Do(); err != nil {
+	if _, err := svc.Projects.Secrets.Delete(secretFullName(p.client.Project(), name)).Context(ctx).Do(); err != nil {
 		if isNotFound(err) {
 			return notFoundErr("secret", name)
 		}
@@ -173,7 +173,7 @@ func (p *GCPSecretsProvider) addVersion(ctx context.Context, svc *secretmanager.
 			Data: base64.StdEncoding.EncodeToString([]byte(value)),
 		},
 	}
-	if _, err := svc.Projects.Secrets.AddVersion(secretFullName(p.client.Project(), name), req).Do(); err != nil {
+	if _, err := svc.Projects.Secrets.AddVersion(secretFullName(p.client.Project(), name), req).Context(ctx).Do(); err != nil {
 		return err
 	}
 	return nil
@@ -186,7 +186,7 @@ func (p *GCPSecretsProvider) createSecret(ctx context.Context, svc *secretmanage
 			Automatic: &secretmanager.Automatic{},
 		},
 	}
-	if _, err := svc.Projects.Secrets.Create("projects/"+p.client.Project(), secret).SecretId(name).Do(); err != nil {
+	if _, err := svc.Projects.Secrets.Create("projects/"+p.client.Project(), secret).SecretId(name).Context(ctx).Do(); err != nil {
 		return fmt.Errorf("failed to create secret %s: %w", name, err)
 	}
 	return nil
