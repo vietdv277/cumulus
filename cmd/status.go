@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -54,15 +55,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	switch ctx.Provider {
 	case "aws":
-		displayAWSStatus(ctx)
+		displayAWSStatus(cmd.Context(), ctx)
 	case "gcp":
-		displayGCPStatus(ctx)
+		displayGCPStatus(cmd.Context(), ctx)
 	}
 
 	return nil
 }
 
-func displayAWSStatus(ctx *config.Context) {
+func displayAWSStatus(cctx context.Context, ctx *config.Context) {
 	fmt.Printf("Profile:  %s\n", ui.AWSStyle.Render(ctx.Profile))
 	if ctx.Region != "" {
 		fmt.Printf("Region:   %s\n", ctx.Region)
@@ -71,7 +72,7 @@ func displayAWSStatus(ctx *config.Context) {
 
 	// Try to get caller identity
 	fmt.Print("Auth:     ")
-	identity, err := aws.GetCallerIdentity(ctx.Profile, ctx.Region)
+	identity, err := aws.GetCallerIdentity(cctx, ctx.Profile, ctx.Region)
 	if err != nil {
 		fmt.Println(ui.StoppedStyle.Render("✗ Not authenticated"))
 		fmt.Printf("          %s\n", ui.MutedStyle.Render(err.Error()))
@@ -88,7 +89,7 @@ func displayAWSStatus(ctx *config.Context) {
 	}
 }
 
-func displayGCPStatus(ctx *config.Context) {
+func displayGCPStatus(cctx context.Context, ctx *config.Context) {
 	fmt.Printf("Project:  %s\n", ui.GCPStyle.Render(ctx.Project))
 	if ctx.Region != "" {
 		fmt.Printf("Region:   %s\n", ctx.Region)
@@ -96,7 +97,7 @@ func displayGCPStatus(ctx *config.Context) {
 	fmt.Println()
 
 	fmt.Print("Auth:     ")
-	identity, err := gcp.GetCallerIdentity(ctx.Project, ctx.Region)
+	identity, err := gcp.GetCallerIdentity(cctx, ctx.Project, ctx.Region)
 	if err != nil {
 		fmt.Println(ui.StoppedStyle.Render("✗ Not authenticated"))
 		fmt.Printf("          %s\n", ui.MutedStyle.Render(err.Error()))

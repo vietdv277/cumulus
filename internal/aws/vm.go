@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -74,16 +78,17 @@ func (p *AWSVMProvider) List(ctx context.Context, filter *provider.VMFilter) ([]
 		Filters: filters,
 	}
 
-	output, err := p.client.EC2().DescribeInstances(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to describe instances: %w", err)
-	}
-
-	// Convert to unified VM type
 	var vms []types.VM
-	for _, reservation := range output.Reservations {
-		for _, inst := range reservation.Instances {
-			vms = append(vms, ec2ToVM(inst))
+	paginator := ec2.NewDescribeInstancesPaginator(p.client.EC2(), input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe instances: %w", err)
+		}
+		for _, reservation := range page.Reservations {
+			for _, inst := range reservation.Instances {
+				vms = append(vms, ec2ToVM(inst))
+			}
 		}
 	}
 
@@ -93,44 +98,66 @@ func (p *AWSVMProvider) List(ctx context.Context, filter *provider.VMFilter) ([]
 // Get returns a single VM by name or ID
 func (p *AWSVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, error) {
 	// Try by instance ID first
-	if len(nameOrID) > 0 && nameOrID[0] == 'i' && nameOrID[1] == '-' {
+	if isInstanceID(nameOrID) {
 		input := &ec2.DescribeInstancesInput{
 			InstanceIds: []string{nameOrID},
 		}
 
 		output, err := p.client.EC2().DescribeInstances(ctx, input)
 		if err != nil {
-			return nil, fmt.Errorf("instance not found: %s", nameOrID)
+			if isNotFoundErr(err, "InvalidInstanceID.NotFound") {
+				return nil, fmt.Errorf("instance not found: %s", nameOrID)
+			}
+			return nil, fmt.Errorf("failed to get instance %s: %w", nameOrID, err)
 		}
 
-		if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
-			vm := ec2ToVM(output.Reservations[0].Instances[0])
-			return &vm, nil
+		for _, reservation := range output.Reservations {
+			if len(reservation.Instances) > 0 {
+				vm := ec2ToVM(reservation.Instances[0])
+				return &vm, nil
+			}
 		}
 		return nil, fmt.Errorf("instance not found: %s", nameOrID)
 	}
 
-	// Search by name
+	// Search by name, filtering to non-terminated states so a terminated ASG
+	// member with the same Name tag doesn't shadow a live instance.
 	input := &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("tag:Name"),
 				Values: []string{nameOrID},
 			},
+			{
+				Name:   aws.String("instance-state-name"),
+				Values: []string{"pending", "running", "stopping", "stopped"},
+			},
 		},
 	}
 
-	output, err := p.client.EC2().DescribeInstances(ctx, input)
+	var matches []vmMatch
+	paginator := ec2.NewDescribeInstancesPaginator(p.client.EC2(), input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find instance %s: %w", nameOrID, err)
+		}
+		for _, reservation := range page.Reservations {
+			for _, inst := range reservation.Instances {
+				matches = append(matches, vmMatch{
+					ID:    deref(inst.InstanceId),
+					State: string(instanceStateName(inst)),
+					VM:    ec2ToVM(inst),
+				})
+			}
+		}
+	}
+
+	vm, err := selectInstance(matches, nameOrID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find instance: %w", err)
+		return nil, err
 	}
-
-	if len(output.Reservations) == 0 || len(output.Reservations[0].Instances) == 0 {
-		return nil, fmt.Errorf("instance not found: %s", nameOrID)
-	}
-
-	vm := ec2ToVM(output.Reservations[0].Instances[0])
-	return &vm, nil
+	return vm, nil
 }
 
 // Start starts an EC2 instance
@@ -143,7 +170,10 @@ func (p *AWSVMProvider) Start(ctx context.Context, nameOrID string) error {
 	_, err = p.client.EC2().StartInstances(ctx, &ec2.StartInstancesInput{
 		InstanceIds: []string{vm.ID},
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to start instance %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 // Stop stops an EC2 instance
@@ -156,7 +186,10 @@ func (p *AWSVMProvider) Stop(ctx context.Context, nameOrID string) error {
 	_, err = p.client.EC2().StopInstances(ctx, &ec2.StopInstancesInput{
 		InstanceIds: []string{vm.ID},
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to stop instance %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 // Reboot reboots an EC2 instance
@@ -169,7 +202,10 @@ func (p *AWSVMProvider) Reboot(ctx context.Context, nameOrID string) error {
 	_, err = p.client.EC2().RebootInstances(ctx, &ec2.RebootInstancesInput{
 		InstanceIds: []string{vm.ID},
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to reboot instance %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 // Connect establishes an SSM session to the instance
@@ -189,7 +225,7 @@ func (p *AWSVMProvider) Connect(ctx context.Context, nameOrID string) error {
 		args = append(args, "--region", p.region)
 	}
 
-	ssmCmd := exec.Command("aws", args...)
+	ssmCmd := exec.CommandContext(ctx, "aws", args...)
 	ssmCmd.Stdin = os.Stdin
 	ssmCmd.Stdout = os.Stdout
 	ssmCmd.Stderr = os.Stderr
@@ -200,8 +236,23 @@ func (p *AWSVMProvider) Connect(ctx context.Context, nameOrID string) error {
 // StartPortForward starts an SSM port-forwarding session and returns the running command.
 // Caller owns the process lifecycle (Wait/Kill). Used by Tunnel (blocks on Wait) and by
 // k8s connect (manages lifecycle around a subshell). Output is wired to os.Stderr so the
-// caller's stdout stays clean for subshells / pipes.
+// caller's stdout stays clean for subshells / pipes. The session runs in its own process
+// group (on unix) so teardown can signal the session-manager-plugin child too.
 func (p *AWSVMProvider) StartPortForward(ctx context.Context, instanceID string, remotePort, localPort int) (*exec.Cmd, error) {
+	cmd, err := p.portForwardCmd(ctx, instanceID, remotePort, localPort)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := startTunnelProc(cmd); err != nil {
+		return nil, fmt.Errorf("failed to start SSM session: %w", err)
+	}
+	return cmd, nil
+}
+
+// portForwardCmd builds the `aws ssm start-session` port-forwarding command.
+func (p *AWSVMProvider) portForwardCmd(ctx context.Context, instanceID string, remotePort, localPort int) (*exec.Cmd, error) {
 	params := map[string][]string{
 		"portNumber":      {strconv.Itoa(remotePort)},
 		"localPortNumber": {strconv.Itoa(localPort)},
@@ -224,13 +275,7 @@ func (p *AWSVMProvider) StartPortForward(ctx context.Context, instanceID string,
 		args = append(args, "--region", p.region)
 	}
 
-	cmd := exec.CommandContext(ctx, "aws", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start SSM session: %w", err)
-	}
-	return cmd, nil
+	return exec.CommandContext(ctx, "aws", args...), nil
 }
 
 // Tunnel creates a port forwarding tunnel via SSM (blocking).
@@ -243,20 +288,68 @@ func (p *AWSVMProvider) Tunnel(ctx context.Context, nameOrID string, opts *provi
 		return err
 	}
 
-	cmd, err := p.StartPortForward(ctx, vm.ID, opts.RemotePort, opts.LocalPort)
+	cmd, err := p.portForwardCmd(ctx, vm.ID, opts.RemotePort, opts.LocalPort)
 	if err != nil {
 		return err
 	}
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	return cmd.Wait()
+	cmd.Stderr = os.Stderr
+	if err := startTunnelProc(cmd); err != nil {
+		return fmt.Errorf("failed to start SSM session: %w", err)
+	}
+
+	waitDone := make(chan error, 1)
+	exit := make(chan struct{})
+	go func() {
+		err := cmd.Wait()
+		waitDone <- err
+		close(exit)
+	}()
+	defer stopTunnel(cmd, exit)
+
+	// The session runs in its own process group, so Ctrl-C reaches only cml;
+	// without this handler cml would die on the default SIGINT action and
+	// orphan the tunnel. Tear the group down on our own terms instead.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	select {
+	case err := <-waitDone:
+		return err
+	case <-sigCh:
+		stopTunnel(cmd, exit)
+		return nil
+	}
+}
+
+// startTunnelProc starts a prepared tunnel command in its own process group
+// (unix) so the session-manager-plugin child can be signalled with it.
+func startTunnelProc(cmd *exec.Cmd) error {
+	tunnelProcGroup(cmd)
+	return cmd.Start()
+}
+
+// stopTunnel signals the tunnel's process group, escalating to a kill after a
+// short grace period. exit must be closed by the Wait watcher.
+func stopTunnel(cmd *exec.Cmd, exit <-chan struct{}) {
+	if cmd.Process == nil {
+		return
+	}
+	_ = TerminateTunnel(cmd)
+	select {
+	case <-exit:
+	case <-time.After(3 * time.Second):
+		_ = KillTunnel(cmd)
+		<-exit
+	}
 }
 
 // ec2ToVM converts an EC2 instance to the unified VM type
 func ec2ToVM(i ec2types.Instance) types.VM {
 	vm := types.VM{
 		ID:       deref(i.InstanceId),
-		State:    ec2StateToVMState(i.State.Name),
+		State:    ec2StateToVMState(instanceStateName(i)),
 		Type:     string(i.InstanceType),
 		Provider: "aws",
 		Tags:     make(map[string]string),
@@ -294,6 +387,45 @@ func ec2ToVM(i ec2types.Instance) types.VM {
 	}
 
 	return vm
+}
+
+// instanceStateName safely reads an instance's state name; the SDK leaves
+// State nil for some shapes.
+func instanceStateName(i ec2types.Instance) ec2types.InstanceStateName {
+	if i.State == nil {
+		return ""
+	}
+	return i.State.Name
+}
+
+// isInstanceID reports whether the argument looks like an EC2 instance ID.
+func isInstanceID(nameOrID string) bool {
+	return strings.HasPrefix(nameOrID, "i-")
+}
+
+// vmMatch is one candidate instance found by a name lookup.
+type vmMatch struct {
+	ID    string
+	State string
+	VM    types.VM
+}
+
+// selectInstance picks the single candidate for a name lookup, rejecting
+// ambiguous names with an error that lists every match.
+func selectInstance(matches []vmMatch, name string) (*types.VM, error) {
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("instance not found: %s", name)
+	}
+	if len(matches) == 1 {
+		vm := matches[0].VM
+		return &vm, nil
+	}
+
+	var b strings.Builder
+	for _, m := range matches {
+		b.WriteString("\n  " + m.ID + " (" + m.State + ")")
+	}
+	return nil, fmt.Errorf("multiple instances named %q; pass an instance ID instead:%s", name, b.String())
 }
 
 // ec2StateToVMState converts EC2 state to unified VMState

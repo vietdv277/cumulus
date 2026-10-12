@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"fmt"
+
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 
@@ -9,14 +11,16 @@ import (
 
 // ListLoadBalancers returns all load balancers (ALB/NLB)
 func (c *Client) ListLoadBalancers() ([]pkgtypes.LoadBalancer, error) {
-	output, err := c.ELBv2().DescribeLoadBalancers(c.ctx, &elbv2.DescribeLoadBalancersInput{})
-	if err != nil {
-		return nil, err
-	}
-
 	var lbs []pkgtypes.LoadBalancer
-	for _, lb := range output.LoadBalancers {
-		lbs = append(lbs, toLoadBalancer(lb))
+	paginator := elbv2.NewDescribeLoadBalancersPaginator(c.ELBv2(), &elbv2.DescribeLoadBalancersInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(c.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe load balancers: %w", err)
+		}
+		for _, lb := range page.LoadBalancers {
+			lbs = append(lbs, toLoadBalancer(lb))
+		}
 	}
 
 	return lbs, nil
@@ -28,7 +32,7 @@ func (c *Client) DescribeLoadBalancer(name string) (*pkgtypes.LoadBalancer, erro
 		Names: []string{name},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to describe load balancer %s: %w", name, err)
 	}
 
 	if len(output.LoadBalancers) == 0 {
@@ -46,16 +50,18 @@ func (c *Client) GetLoadBalancerByName(name string) (*pkgtypes.LoadBalancer, err
 
 // ListListeners returns all listeners for a load balancer
 func (c *Client) ListListeners(lbARN string) ([]pkgtypes.Listener, error) {
-	output, err := c.ELBv2().DescribeListeners(c.ctx, &elbv2.DescribeListenersInput{
+	var listeners []pkgtypes.Listener
+	paginator := elbv2.NewDescribeListenersPaginator(c.ELBv2(), &elbv2.DescribeListenersInput{
 		LoadBalancerArn: &lbARN,
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	var listeners []pkgtypes.Listener
-	for _, l := range output.Listeners {
-		listeners = append(listeners, toListener(l))
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(c.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe listeners: %w", err)
+		}
+		for _, l := range page.Listeners {
+			listeners = append(listeners, toListener(l))
+		}
 	}
 
 	return listeners, nil
@@ -68,14 +74,16 @@ func (c *Client) ListTargetGroups(lbARN string) ([]pkgtypes.TargetGroup, error) 
 		input.LoadBalancerArn = &lbARN
 	}
 
-	output, err := c.ELBv2().DescribeTargetGroups(c.ctx, input)
-	if err != nil {
-		return nil, err
-	}
-
 	var tgs []pkgtypes.TargetGroup
-	for _, tg := range output.TargetGroups {
-		tgs = append(tgs, toTargetGroup(tg, lbARN))
+	paginator := elbv2.NewDescribeTargetGroupsPaginator(c.ELBv2(), input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(c.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe target groups: %w", err)
+		}
+		for _, tg := range page.TargetGroups {
+			tgs = append(tgs, toTargetGroup(tg, lbARN))
+		}
 	}
 
 	return tgs, nil
@@ -87,7 +95,7 @@ func (c *Client) ListTargets(tgARN string) ([]pkgtypes.Target, error) {
 		TargetGroupArn: &tgARN,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to describe target health: %w", err)
 	}
 
 	var targets []pkgtypes.Target

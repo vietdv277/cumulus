@@ -35,21 +35,23 @@ func NewStorageProvider(client *Client, profile, region string) *AWSStorageProvi
 
 // ListBuckets returns all buckets owned by the caller
 func (p *AWSStorageProvider) ListBuckets(ctx context.Context) ([]types.Bucket, error) {
-	out, err := p.client.S3().ListBuckets(ctx, &s3.ListBucketsInput{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list buckets: %w", err)
-	}
-
-	buckets := make([]types.Bucket, 0, len(out.Buckets))
-	for _, b := range out.Buckets {
-		bucket := types.Bucket{
-			Name:     deref(b.Name),
-			Provider: "aws",
+	buckets := make([]types.Bucket, 0)
+	paginator := s3.NewListBucketsPaginator(p.client.S3(), &s3.ListBucketsInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list buckets: %w", err)
 		}
-		if b.CreationDate != nil {
-			bucket.CreatedAt = *b.CreationDate
+		for _, b := range page.Buckets {
+			bucket := types.Bucket{
+				Name:     deref(b.Name),
+				Provider: "aws",
+			}
+			if b.CreationDate != nil {
+				bucket.CreatedAt = *b.CreationDate
+			}
+			buckets = append(buckets, bucket)
 		}
-		buckets = append(buckets, bucket)
 	}
 	return buckets, nil
 }
@@ -102,10 +104,23 @@ func (p *AWSStorageProvider) Copy(ctx context.Context, src, dst string) error {
 
 	switch {
 	case srcRemote && dstRemote:
-		_, err := p.client.S3().CopyObject(ctx, &s3.CopyObjectInput{
+		// A single-request COPY caps at 5 GiB; look the source size up so the
+		// user gets a clear error instead of an opaque API failure.
+		head, err := p.client.S3().HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(srcBucket),
+			Key:    aws.String(srcKey),
+		})
+		if err != nil {
+			return fmt.Errorf("s3 source lookup failed: %w", err)
+		}
+		if err := checkCopySize(deref64(head.ContentLength)); err != nil {
+			return err
+		}
+
+		_, err = p.client.S3().CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     aws.String(dstBucket),
-			Key:        aws.String(dstKey),
-			CopySource: aws.String(srcBucket + "/" + srcKey),
+			Key:        aws.String(resolveCopyDestKey(dstKey, srcKey)),
+			CopySource: aws.String(encodeS3CopySource(srcBucket, srcKey)),
 		})
 		if err != nil {
 			return fmt.Errorf("s3 copy failed: %w", err)
@@ -126,13 +141,23 @@ func (p *AWSStorageProvider) Copy(ctx context.Context, src, dst string) error {
 		if isDir(localPath) {
 			localPath = filepath.Join(localPath, filepath.Base(srcKey))
 		}
-		f, err := os.Create(localPath)
+		// Stage in a temp file so a failed download can't leave a truncated
+		// file behind; rename only after the body is fully written and closed.
+		tmp, err := os.CreateTemp(filepath.Dir(localPath), ".cml-download-*")
 		if err != nil {
-			return fmt.Errorf("create local file: %w", err)
+			return fmt.Errorf("create temp file: %w", err)
 		}
-		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(f, out.Body); err != nil {
+		tmpPath := tmp.Name()
+		defer func() { _ = os.Remove(tmpPath) }()
+		if _, err := io.Copy(tmp, out.Body); err != nil {
+			_ = tmp.Close()
 			return fmt.Errorf("write local file: %w", err)
+		}
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("close local file: %w", err)
+		}
+		if err := os.Rename(tmpPath, localPath); err != nil {
+			return fmt.Errorf("finalize local file: %w", err)
 		}
 		return nil
 
@@ -142,13 +167,14 @@ func (p *AWSStorageProvider) Copy(ctx context.Context, src, dst string) error {
 			return fmt.Errorf("open local file: %w", err)
 		}
 		defer func() { _ = f.Close() }()
-		if dstKey == "" || strings.HasSuffix(dstKey, "/") {
-			dstKey = strings.TrimSuffix(dstKey, "/") + "/" + filepath.Base(src)
-			dstKey = strings.TrimPrefix(dstKey, "/")
+		if info, statErr := f.Stat(); statErr == nil {
+			if err := checkCopySize(info.Size()); err != nil {
+				return err
+			}
 		}
 		_, err = p.client.S3().PutObject(ctx, &s3.PutObjectInput{
 			Bucket: aws.String(dstBucket),
-			Key:    aws.String(dstKey),
+			Key:    aws.String(resolveCopyDestKey(dstKey, src)),
 			Body:   f,
 		})
 		if err != nil {
@@ -196,8 +222,9 @@ func (p *AWSStorageProvider) Presign(ctx context.Context, path string, expirySec
 		return "", fmt.Errorf("presign requires an s3:// path")
 	}
 
-	if expirySeconds <= 0 {
-		expirySeconds = 3600
+	expirySeconds, err = normalizePresignExpiry(expirySeconds)
+	if err != nil {
+		return "", err
 	}
 
 	presigner := s3.NewPresignClient(p.client.S3())
@@ -209,6 +236,73 @@ func (p *AWSStorageProvider) Presign(ctx context.Context, path string, expirySec
 		return "", fmt.Errorf("presign failed: %w", err)
 	}
 	return req.URL, nil
+}
+
+// maxPresignExpirySeconds is S3's hard cap on presigned URL lifetime (7 days).
+const maxPresignExpirySeconds = 604800
+
+// normalizePresignExpiry applies the default expiry and rejects values outside
+// S3's allowed presign window.
+func normalizePresignExpiry(seconds int) (int, error) {
+	if seconds <= 0 {
+		seconds = 3600
+	}
+	if seconds > maxPresignExpirySeconds {
+		return 0, fmt.Errorf("presign expiry %ds exceeds the S3 limit of %ds (7 days)", seconds, maxPresignExpirySeconds)
+	}
+	return seconds, nil
+}
+
+// maxSingleObjectCopy is S3's single-request PUT/COPY limit (5 GiB).
+const maxSingleObjectCopy = 5 * 1024 * 1024 * 1024
+
+// checkCopySize returns a clear error for sources above the single-request
+// limit; multipart upload/copy is not supported yet.
+func checkCopySize(size int64) error {
+	if size > maxSingleObjectCopy {
+		return fmt.Errorf("%d-byte object exceeds the 5 GiB single-request copy limit; multipart upload is not supported yet", size)
+	}
+	return nil
+}
+
+// encodeS3CopySource returns the x-amz-copy-source value for bucket/key, with
+// the key URL-encoded per S3 rules — every byte outside the unreserved ASCII
+// set, except the '/' separators.
+func encodeS3CopySource(bucket, key string) string {
+	var b strings.Builder
+	b.WriteString(bucket)
+	b.WriteString("/")
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		switch {
+		case c == '/' || c == '-' || c == '_' || c == '.' || c == '~',
+			c >= '0' && c <= '9',
+			c >= 'a' && c <= 'z',
+			c >= 'A' && c <= 'Z':
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+// resolveCopyDestKey appends the source's base name when the destination key
+// is empty or a directory-style prefix ending in '/'.
+func resolveCopyDestKey(dstKey, srcKey string) string {
+	if dstKey == "" || strings.HasSuffix(dstKey, "/") {
+		dstKey = strings.TrimSuffix(dstKey, "/") + "/" + filepath.Base(srcKey)
+		dstKey = strings.TrimPrefix(dstKey, "/")
+	}
+	return dstKey
+}
+
+// deref64 safely dereferences an int64 pointer
+func deref64(n *int64) int64 {
+	if n == nil {
+		return 0
+	}
+	return *n
 }
 
 // parseS3Path returns (isRemote, bucket, key, err) for paths like
