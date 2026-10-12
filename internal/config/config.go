@@ -51,39 +51,51 @@ func LoadConfig() (*Config, error) {
 
 // SaveConfig saves the configuration to ~/.cml/config.yaml
 func SaveConfig(cfg *Config) error {
-	configDir := GetConfigDir()
-
-	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	configPath := GetConfigPath()
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := writeFileAtomic(GetConfigPath(), data); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
 }
 
-// SetProfile updates the AWS profile in the config
+// SetProfile records the active AWS profile in the new XDG config as an
+// `aws:<profile>` context and makes it current, so the choice survives
+// legacy-config migration. Existing fields of the context are kept.
 func SetProfile(profileName string) error {
-	cfg, err := LoadConfig()
+	cfg, err := LoadCMLConfig()
 	if err != nil {
-		cfg = &Config{}
+		return fmt.Errorf("load config: %w", err)
 	}
 
-	cfg.AWSProfile = profileName
-	return SaveConfig(cfg)
+	contextName := "aws:" + profileName
+	if ctx, ok := cfg.Contexts[contextName]; ok {
+		if ctx.Profile == "" {
+			ctx.Profile = profileName
+		}
+	} else {
+		cfg.Contexts[contextName] = &Context{
+			Provider: "aws",
+			Profile:  profileName,
+		}
+	}
+	cfg.CurrentContext = contextName
+
+	return SaveCMLConfig(cfg)
 }
 
-// GetSavedProfile returns the saved AWS profile from config
+// GetSavedProfile returns the active AWS profile: the profile of the current
+// context when it is an AWS one, falling back to the legacy ~/.cml/config.yaml
+// value. Priority stays --profile flag > config > AWS_PROFILE (callers).
 func GetSavedProfile() string {
+	if ctx, _, err := GetCurrentContext(); err == nil && ctx != nil && ctx.Provider == "aws" && ctx.Profile != "" {
+		return ctx.Profile
+	}
+
 	cfg, err := LoadConfig()
 	if err != nil {
 		return ""

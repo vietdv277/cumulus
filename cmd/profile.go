@@ -40,7 +40,9 @@ var profileSetCmd = &cobra.Command{
 	Short: "Set the active AWS profile",
 	Long: `Set a specific AWS profile as active.
 
-The profile will be saved to ~/.config/cml/config.yaml and used by future cml commands.
+The profile is saved as an aws:<profile> context in ~/.config/cml/config.yaml
+and made the current context, so legacy commands and future cml commands both
+use it.
 
 Examples:
   cml profile set my-profile
@@ -83,7 +85,7 @@ func runProfileInteractive(cmd *cobra.Command, args []string) error {
 
 	// Print success message and export command
 	fmt.Printf("\nProfile set to: %s\n", selected.Name)
-	fmt.Printf("Saved to: %s\n\n", config.GetConfigPath())
+	fmt.Printf("Saved to: %s\n\n", config.GetCMLConfigPath())
 	fmt.Println("To use this profile in your current shell, run:")
 	fmt.Printf("  export AWS_PROFILE=%s\n", selected.Name)
 
@@ -123,7 +125,7 @@ func runProfileSet(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Profile set to: %s\n", profileName)
-	fmt.Printf("Saved to: %s\n\n", config.GetConfigPath())
+	fmt.Printf("Saved to: %s\n\n", config.GetCMLConfigPath())
 	fmt.Println("To use this profile in your current shell, run:")
 	fmt.Printf("  export AWS_PROFILE=%s\n", profileName)
 

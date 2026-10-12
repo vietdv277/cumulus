@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -37,18 +36,43 @@ type rawConfig struct {
 	} `yaml:"contexts"`
 }
 
-// LoadContexts returns all contexts plus the current-context name from the
-// first existing kubeconfig in KUBECONFIG (colon/semicolon-separated) or,
-// if unset, ~/.kube/config. Returns (nil, "", nil) when no file is found.
+// LoadContexts returns all contexts plus the current-context, merged from
+// every kubeconfig listed in KUBECONFIG (OS list-separated) or, if unset,
+// ~/.kube/config — the way kubectl does it: first file wins for duplicate
+// context names and for current-context, missing files are skipped.
+// Returns (nil, "", nil) when no file is found.
 func LoadContexts() ([]Context, string, error) {
-	path, err := resolvePath()
+	paths, err := resolvePaths()
 	if err != nil {
 		return nil, "", err
 	}
-	if path == "" {
-		return nil, "", nil
-	}
 
+	var (
+		contexts []Context
+		current  string
+		seen     = make(map[string]bool)
+	)
+	for _, path := range paths {
+		fileContexts, fileCurrent, err := loadFile(path)
+		if err != nil {
+			return nil, "", err
+		}
+		for _, c := range fileContexts {
+			if seen[c.Name] {
+				continue // first file wins for duplicate context names
+			}
+			seen[c.Name] = true
+			contexts = append(contexts, c)
+		}
+		if current == "" {
+			current = fileCurrent
+		}
+	}
+	return contexts, current, nil
+}
+
+// loadFile parses a single kubeconfig file.
+func loadFile(path string) ([]Context, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", fmt.Errorf("read kubeconfig %s: %w", path, err)
@@ -71,34 +95,35 @@ func LoadContexts() ([]Context, string, error) {
 	return contexts, cfg.CurrentContext, nil
 }
 
-func resolvePath() (string, error) {
+// resolvePaths returns the candidate kubeconfig files in order: every
+// existing file from $KUBECONFIG when set, otherwise ~/.kube/config.
+func resolvePaths() ([]string, error) {
 	if env := os.Getenv("KUBECONFIG"); env != "" {
-		sep := ":"
-		if runtime.GOOS == "windows" {
-			sep = ";"
-		}
-		for _, p := range strings.Split(env, sep) {
+		var paths []string
+		for _, p := range filepath.SplitList(env) {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
 			}
-			if _, err := os.Stat(p); err == nil {
-				return p, nil
+			// Skip missing files like kubectl does instead of failing.
+			if _, err := os.Stat(p); err != nil {
+				continue
 			}
+			paths = append(paths, p)
 		}
-		return "", nil
+		return paths, nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+		return nil, fmt.Errorf("resolve home dir: %w", err)
 	}
 	path := filepath.Join(home, ".kube", "config")
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
+			return nil, nil
 		}
-		return "", err
+		return nil, err
 	}
-	return path, nil
+	return []string{path}, nil
 }

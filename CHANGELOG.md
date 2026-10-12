@@ -6,6 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `--yes/-y` and a confirmation prompt on `vm stop`, `vm reboot`, the interactive
+  Stop action in `vm list -i`, `secrets delete` and `storage sync --delete`.
+  Without a TTY and without `--yes` these commands refuse instead of proceeding.
+- `secrets delete --force` for immediate, unrecoverable Secrets Manager deletion.
+- `ssm:` / `sm:` name prefixes to force the secrets backend.
+- Unit tests for `cmd`, `internal/aws`, `internal/config`, `internal/gcp` and
+  `internal/kubeconfig`.
+
+### Changed
+- `secrets delete` on Secrets Manager is now recoverable for 7 days by default.
+- `--profile/-p` and `--region/-r` are rejected by context-aware commands (`vm`,
+  `k8s`, `secrets`, `storage`, `db`) instead of being silently ignored.
+- A VM name matching more than one instance (AWS) or zone (GCP) is an error that
+  lists the matches; terminated instances no longer match.
+- `cml profile set` stores the profile as an `aws:<profile>` context.
+- Config is written atomically with mode 0600 (directory 0700).
+- `db connect` falls back to the context's `bastion` when `--via` is omitted.
+- Go 1.26; `golang.org/x/net`, `google.golang.org/grpc` and `golang.org/x/text`
+  upgraded past reachable vulnerabilities.
+
+### Fixed
+- Aliases now resolve in `--context` and `cml use`; `cml use <unknown>` exits 1.
+- `cml use add AWS:prod` stores a lower-case provider.
+- `--ssm-only` / `--sm-only` are honoured.
+- Plain secret names that exist only in SSM resolve on `get`/`set`; `set` no
+  longer turns any error into `CreateSecret`.
+- `cml vm get i` no longer panics; `ec2 --name` matches the `Name` tag.
+- List commands return every page (EC2, VPC, subnets, load balancers, buckets).
+- API errors such as AccessDenied are no longer reported as "not found".
+- `vm tunnel` and `k8s connect` tear down the whole SSM process group, refuse a
+  local port that is already in use, and fail fast if the tunnel exits.
+- S3 copy encodes `CopySource`, honours `dir/` destinations, writes downloads
+  atomically and bounds presign expiry to 7 days.
+- Legacy config migration no longer wipes a config it cannot parse or overwrites
+  an existing context.
+- GCP: malformed zone/region values and a missing `bastion_zone` are errors;
+  GKE partial results and node counts are reported correctly.
+- Every file in `$KUBECONFIG` is read, like kubectl.
+- Interactive selector failures are reported instead of exiting 0.
+
 ## [0.10.0] — 2026-04-23
 
 ### Added

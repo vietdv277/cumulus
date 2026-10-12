@@ -410,7 +410,7 @@ Handle features not available in all providers:
 | Secrets.List | ✓ | ✓ | - |
 | DB.Connect | Via bastion | Via Cloud SQL Proxy | - |
 
-For unsupported features, return `ErrNotSupported` with helpful message.
+GCP gaps (secrets, db, storage) return a clear "not supported for GCP" error with an alternative.
 
 ---
 
@@ -516,7 +516,7 @@ SecretValue
 
 ### Phase 6: Polish — in progress
 
-- [ ] Shell completions (zsh, bash, fish)
+- [x] Shell completions (zsh, bash, fish) — provided by Cobra's built-in `cml completion`
 - [ ] `--output json/yaml/table` flag
 - [x] Alias resolution in config layer
 - [ ] User-facing alias management commands
@@ -562,7 +562,7 @@ No changes required to unified commands or models.
 | Resource not found | Suggest similar names |
 | Permission denied | Show required permissions |
 | Network error | Retry with backoff |
-| Unsupported feature | Return `ErrNotSupported` with alternative |
+| Unsupported feature | Clear "not supported for GCP" error with alternative |
 
 ---
 
