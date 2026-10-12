@@ -517,7 +517,7 @@ SecretValue
 ### Phase 6: Polish — in progress
 
 - [x] Shell completions (zsh, bash, fish) — provided by Cobra's built-in `cml completion`
-- [ ] `--output json/yaml/table` flag
+- [x] `--output json/yaml/table` flag
 - [x] Alias resolution in config layer
 - [ ] User-facing alias management commands
 - [ ] `doctor` command

@@ -144,6 +144,14 @@ func getK8sProvider(ctx context.Context) (provider.K8sProvider, error) {
 }
 
 func runK8sList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if k8sListInteractive && out != OutputTable {
+		return interactiveConflict()
+	}
+
 	ctx := context.Background()
 
 	p, err := getK8sProvider(ctx)
@@ -167,7 +175,7 @@ func runK8sList(cmd *cobra.Command, args []string) error {
 		clusters = filtered
 	}
 
-	if len(clusters) == 0 {
+	if len(clusters) == 0 && out == OutputTable {
 		fmt.Println("No clusters found")
 		return nil
 	}
@@ -184,11 +192,15 @@ func runK8sList(cmd *cobra.Command, args []string) error {
 		return p.UpdateKubeconfig(ctx, selected.Name)
 	}
 
-	printK8sTable(clusters)
-	return nil
+	return render(os.Stdout, out, clusters, func() { printK8sTable(clusters) })
 }
 
 func runK8sGet(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	p, err := getK8sProvider(ctx)
@@ -201,8 +213,7 @@ func runK8sGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	printK8sDetails(c)
-	return nil
+	return render(os.Stdout, out, c, func() { printK8sDetails(c) })
 }
 
 func runK8sUse(cmd *cobra.Command, args []string) error {
@@ -217,11 +228,40 @@ func runK8sUse(cmd *cobra.Command, args []string) error {
 	return p.UpdateKubeconfig(ctx, args[0])
 }
 
+// kubectlContext is the stable json/yaml shape of a kubeconfig context entry.
+type kubectlContext struct {
+	Name      string `json:"name" yaml:"name"`
+	Cluster   string `json:"cluster" yaml:"cluster"`
+	User      string `json:"user" yaml:"user"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Current   bool   `json:"current" yaml:"current"`
+}
+
 func runK8sContexts(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	contexts, current, err := kubeconfig.LoadContexts()
 	if err != nil {
 		return err
 	}
+
+	if out != OutputTable {
+		entries := make([]kubectlContext, 0, len(contexts))
+		for _, c := range contexts {
+			entries = append(entries, kubectlContext{
+				Name:      c.Name,
+				Cluster:   c.Cluster,
+				User:      c.User,
+				Namespace: c.Namespace,
+				Current:   c.Name == current,
+			})
+		}
+		return render(os.Stdout, out, entries, nil)
+	}
+
 	if len(contexts) == 0 {
 		fmt.Println("No kubectl contexts found")
 		return nil

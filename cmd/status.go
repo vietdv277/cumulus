@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -27,13 +28,85 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
+// statusOutput is the stable json/yaml shape of `cml status`.
+type statusOutput struct {
+	CurrentContext string `json:"current_context" yaml:"current_context"`
+	ConfigPath     string `json:"config_path" yaml:"config_path"`
+	Provider       string `json:"provider,omitempty" yaml:"provider,omitempty"`
+	Profile        string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	Project        string `json:"project,omitempty" yaml:"project,omitempty"`
+	Region         string `json:"region,omitempty" yaml:"region,omitempty"`
+	Authenticated  bool   `json:"authenticated" yaml:"authenticated"`
+	Account        string `json:"account,omitempty" yaml:"account,omitempty"`
+	Identity       string `json:"identity,omitempty" yaml:"identity,omitempty"`
+	ARN            string `json:"arn,omitempty" yaml:"arn,omitempty"`
+	AuthProject    string `json:"auth_project,omitempty" yaml:"auth_project,omitempty"`
+	TokenType      string `json:"token_type,omitempty" yaml:"token_type,omitempty"`
+	Error          string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
 func runStatus(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Get current context
-	ctx, ctxName, err := config.GetCurrentContext()
+	ctxConfig, ctxName, err := config.GetCurrentContext()
 	if err != nil {
 		return fmt.Errorf("failed to get current context: %w", err)
 	}
 
+	if out == OutputTable {
+		printStatusTable(cmd.Context(), ctxConfig, ctxName)
+		return nil
+	}
+
+	return render(os.Stdout, out, buildStatusOutput(cmd.Context(), ctxConfig, ctxName), nil)
+}
+
+// buildStatusOutput assembles the machine-readable status, probing auth for
+// the context's provider.
+func buildStatusOutput(cctx context.Context, ctxConfig *config.Context, ctxName string) statusOutput {
+	status := statusOutput{
+		CurrentContext: ctxName,
+		ConfigPath:     config.GetCMLConfigPath(),
+	}
+	if ctxConfig == nil {
+		return status
+	}
+
+	status.Provider = ctxConfig.Provider
+	status.Region = ctxConfig.Region
+
+	switch ctxConfig.Provider {
+	case "aws":
+		status.Profile = ctxConfig.Profile
+		identity, err := aws.GetCallerIdentity(cctx, ctxConfig.Profile, ctxConfig.Region)
+		if err != nil {
+			status.Error = err.Error()
+			return status
+		}
+		status.Authenticated = true
+		status.Account = identity.Account
+		status.Identity = identity.UserID
+		status.ARN = identity.Arn
+	case "gcp":
+		status.Project = ctxConfig.Project
+		identity, err := gcp.GetCallerIdentity(cctx, ctxConfig.Project, ctxConfig.Region)
+		if err != nil {
+			status.Error = err.Error()
+			return status
+		}
+		status.Authenticated = true
+		status.Identity = identity.Email
+		status.AuthProject = identity.ProjectID
+		status.TokenType = identity.TokenType
+	}
+	return status
+}
+
+func printStatusTable(cctx context.Context, ctx *config.Context, ctxName string) {
 	fmt.Println("Current Status")
 	fmt.Println(ui.MutedStyle.Render("─────────────────────────────────"))
 	fmt.Println()
@@ -46,7 +119,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Println("No context configured. Set one with:")
 		fmt.Println("  cml use add aws:prod --profile <profile> --region <region>")
 		fmt.Println("  cml use aws:prod")
-		return nil
+		return
 	}
 
 	// Display context info
@@ -55,12 +128,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	switch ctx.Provider {
 	case "aws":
-		displayAWSStatus(cmd.Context(), ctx)
+		displayAWSStatus(cctx, ctx)
 	case "gcp":
-		displayGCPStatus(cmd.Context(), ctx)
+		displayGCPStatus(cctx, ctx)
 	}
-
-	return nil
 }
 
 func displayAWSStatus(cctx context.Context, ctx *config.Context) {

@@ -112,6 +112,11 @@ func getStorageProvider(ctx context.Context) (provider.StorageProvider, error) {
 }
 
 func runStorageLs(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	sp, err := getStorageProvider(ctx)
 	if err != nil {
@@ -123,12 +128,11 @@ func runStorageLs(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if len(buckets) == 0 {
+		if len(buckets) == 0 && out == OutputTable {
 			fmt.Println("No buckets found")
 			return nil
 		}
-		printBucketTable(buckets)
-		return nil
+		return render(os.Stdout, out, buckets, func() { printBucketTable(buckets) })
 	}
 
 	bucket, prefix, err := parseLsTarget(args)
@@ -140,12 +144,16 @@ func runStorageLs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(objects) == 0 {
+	if len(objects) == 0 && out == OutputTable {
 		fmt.Println("No objects found")
 		return nil
 	}
-	printObjectTable(bucket, objects)
-	return nil
+	// The bucket header is info, not the document — keep stdout clean in
+	// json/yaml mode.
+	if out != OutputTable {
+		fmt.Fprintf(os.Stderr, "s3://%s\n", bucket)
+	}
+	return render(os.Stdout, out, objects, func() { printObjectTable(bucket, objects) })
 }
 
 func runStorageCp(cmd *cobra.Command, args []string) error {

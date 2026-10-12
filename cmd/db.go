@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -105,6 +106,11 @@ func getDBProvider(ctx context.Context) (provider.DBProvider, error) {
 }
 
 func runDBList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	dbProvider, err := getDBProvider(ctx)
 	if err != nil {
@@ -117,16 +123,20 @@ func runDBList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if len(dbs) == 0 {
+	if len(dbs) == 0 && out == OutputTable {
 		fmt.Println("No databases found")
 		return nil
 	}
 
-	printDBTable(dbs)
-	return nil
+	return render(os.Stdout, out, dbs, func() { printDBTable(dbs) })
 }
 
 func runDBGet(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	dbProvider, err := getDBProvider(ctx)
 	if err != nil {
@@ -138,8 +148,7 @@ func runDBGet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	printDBDetails(db)
-	return nil
+	return render(os.Stdout, out, db, func() { printDBDetails(db) })
 }
 
 func runDBConnect(cmd *cobra.Command, args []string) error {

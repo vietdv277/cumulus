@@ -3,12 +3,14 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/spf13/cobra"
 
 	internalConfig "github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/output"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
 
@@ -37,7 +39,21 @@ func init() {
 	iamCmd.AddCommand(iamWhoamiCmd)
 }
 
+// identityOutput is the stable json/yaml shape of `cml aws iam whoami`.
+type identityOutput struct {
+	Context string `json:"context" yaml:"context"`
+	Profile string `json:"profile" yaml:"profile"`
+	Account string `json:"account" yaml:"account"`
+	UserID  string `json:"user_id" yaml:"user_id"`
+	ARN     string `json:"arn" yaml:"arn"`
+}
+
 func runIAMWhoami(cmd *cobra.Command, args []string) error {
+	out, err := output.Format(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	// Get current context
@@ -67,9 +83,20 @@ func runIAMWhoami(cmd *cobra.Command, args []string) error {
 
 	stsClient := sts.NewFromConfig(cfg)
 
-	output, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return fmt.Errorf("failed to get caller identity: %w", err)
+	}
+
+	if out != output.Table {
+		doc := identityOutput{
+			Context: ctxName,
+			Profile: ctxConfig.Profile,
+			Account: derefStr(identity.Account),
+			UserID:  derefStr(identity.UserId),
+			ARN:     derefStr(identity.Arn),
+		}
+		return output.Render(os.Stdout, out, doc, nil)
 	}
 
 	fmt.Println()
@@ -78,9 +105,9 @@ func runIAMWhoami(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Context: %s\n", ui.AWSStyle.Render(ctxName))
 	fmt.Printf("  Profile: %s\n", ctxConfig.Profile)
 	fmt.Println()
-	fmt.Printf("  Account: %s\n", derefStr(output.Account))
-	fmt.Printf("  UserID:  %s\n", derefStr(output.UserId))
-	fmt.Printf("  ARN:     %s\n", ui.MutedStyle.Render(derefStr(output.Arn)))
+	fmt.Printf("  Account: %s\n", derefStr(identity.Account))
+	fmt.Printf("  UserID:  %s\n", derefStr(identity.UserId))
+	fmt.Printf("  ARN:     %s\n", ui.MutedStyle.Render(derefStr(identity.Arn)))
 
 	return nil
 }

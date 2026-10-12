@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/ui"
+	"github.com/vietdv277/cumulus/pkg/types"
 )
 
 var vpcCmd = &cobra.Command{
@@ -59,7 +61,18 @@ func init() {
 	vpcCmd.AddCommand(vpcSubnetsCmd)
 }
 
+// vpcDetail is the stable json/yaml shape of `cml vpc describe <vpc-id>`.
+type vpcDetail struct {
+	VPC     *types.VPC     `json:"vpc" yaml:"vpc"`
+	Subnets []types.Subnet `json:"subnets" yaml:"subnets"`
+}
+
 func runVPCList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -74,16 +87,20 @@ func runVPCList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list VPCs: %w", err)
 	}
 
-	if len(vpcs) == 0 {
+	if len(vpcs) == 0 && out == OutputTable {
 		fmt.Println("No VPCs found")
 		return nil
 	}
 
-	ui.PrintVPCTable(vpcs)
-	return nil
+	return render(os.Stdout, out, vpcs, func() { ui.PrintVPCTable(vpcs) })
 }
 
 func runVPCDescribe(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -98,6 +115,9 @@ func runVPCDescribe(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		vpcID = args[0]
 	} else {
+		if out != OutputTable {
+			return fmt.Errorf("--output json/yaml requires a VPC ID (interactive selection not supported)")
+		}
 		// Interactive selector
 		vpcs, err := client.ListVPCs()
 		if err != nil {
@@ -121,6 +141,16 @@ func runVPCDescribe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("VPC %s not found", vpcID)
 	}
 
+	// Get subnets
+	subnets, err := client.ListSubnets(vpcID)
+	if err != nil {
+		return fmt.Errorf("failed to list subnets: %w", err)
+	}
+
+	if out != OutputTable {
+		return render(os.Stdout, out, vpcDetail{VPC: vpc, Subnets: subnets}, nil)
+	}
+
 	// Print VPC details
 	fmt.Println()
 	fmt.Printf("VPC: %s\n", vpc.ID)
@@ -130,12 +160,6 @@ func runVPCDescribe(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Default:  %v\n", vpc.IsDefault)
 	fmt.Printf("  Owner:    %s\n", vpc.OwnerID)
 	fmt.Println()
-
-	// Get and print subnets
-	subnets, err := client.ListSubnets(vpcID)
-	if err != nil {
-		return fmt.Errorf("failed to list subnets: %w", err)
-	}
 
 	if len(subnets) > 0 {
 		fmt.Println("Subnets:")
@@ -148,6 +172,11 @@ func runVPCDescribe(cmd *cobra.Command, args []string) error {
 }
 
 func runVPCSubnets(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -162,6 +191,9 @@ func runVPCSubnets(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		vpcID = args[0]
 	} else {
+		if out != OutputTable {
+			return fmt.Errorf("--output json/yaml requires a VPC ID (interactive selection not supported)")
+		}
 		// Interactive selector
 		vpcs, err := client.ListVPCs()
 		if err != nil {
@@ -181,11 +213,10 @@ func runVPCSubnets(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list subnets: %w", err)
 	}
 
-	if len(subnets) == 0 {
+	if len(subnets) == 0 && out == OutputTable {
 		fmt.Println("No subnets found in this VPC")
 		return nil
 	}
 
-	ui.PrintSubnetTable(subnets)
-	return nil
+	return render(os.Stdout, out, subnets, func() { ui.PrintSubnetTable(subnets) })
 }

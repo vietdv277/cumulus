@@ -74,6 +74,11 @@ func init() {
 }
 
 func runEC2List(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Create AWS client
 	client, err := aws.NewClient(
 		context.Background(),
@@ -100,15 +105,12 @@ func runEC2List(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list EC2 instances: %w", err)
 	}
 
-	if len(instances) == 0 {
+	if len(instances) == 0 && out == OutputTable {
 		fmt.Println("No EC2 instances found")
 		return nil
 	}
 
-	// Print results
-	ui.PrintInstanceTable(instances)
-
-	return nil
+	return render(os.Stdout, out, instances, func() { ui.PrintInstanceTable(instances) })
 }
 
 func runEC2SSH(cmd *cobra.Command, args []string) error {
