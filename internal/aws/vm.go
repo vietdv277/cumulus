@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -290,7 +292,6 @@ func (p *AWSVMProvider) Tunnel(ctx context.Context, nameOrID string, opts *provi
 	if err != nil {
 		return err
 	}
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := startTunnelProc(cmd); err != nil {
@@ -306,7 +307,20 @@ func (p *AWSVMProvider) Tunnel(ctx context.Context, nameOrID string, opts *provi
 	}()
 	defer stopTunnel(cmd, exit)
 
-	return <-waitDone
+	// The session runs in its own process group, so Ctrl-C reaches only cml;
+	// without this handler cml would die on the default SIGINT action and
+	// orphan the tunnel. Tear the group down on our own terms instead.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	select {
+	case err := <-waitDone:
+		return err
+	case <-sigCh:
+		stopTunnel(cmd, exit)
+		return nil
+	}
 }
 
 // startTunnelProc starts a prepared tunnel command in its own process group

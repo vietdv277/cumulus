@@ -281,7 +281,7 @@ func encodeS3CopySource(bucket, key string) string {
 			c >= 'A' && c <= 'Z':
 			b.WriteByte(c)
 		default:
-			b.WriteString(fmt.Sprintf("%%%02X", c))
+			fmt.Fprintf(&b, "%%%02X", c)
 		}
 	}
 	return b.String()
