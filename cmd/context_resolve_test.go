@@ -53,12 +53,10 @@ func resetLegacyFlags() {
 func TestResolveContextRejectsProfileFlag(t *testing.T) {
 	setTestConfig(t, testConfigYAML)
 
-	// Silence cobra's own error/usage printing; we assert on the returned error.
+	// Silence cobra's usage printing; the test asserts on the returned error.
 	rootCmd.SilenceUsage = true
-	rootCmd.SilenceErrors = true
 	t.Cleanup(func() {
 		rootCmd.SilenceUsage = false
-		rootCmd.SilenceErrors = false
 		resetLegacyFlags()
 	})
 
@@ -80,10 +78,8 @@ func TestResolveContextRejectsRegionFlag(t *testing.T) {
 	setTestConfig(t, testConfigYAML)
 
 	rootCmd.SilenceUsage = true
-	rootCmd.SilenceErrors = true
 	t.Cleanup(func() {
 		rootCmd.SilenceUsage = false
-		rootCmd.SilenceErrors = false
 		resetLegacyFlags()
 	})
 

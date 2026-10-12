@@ -529,11 +529,11 @@ SecretValue
 
 #### Next release — v0.11.1 (findings from the v0.11.0 install check)
 
-- [ ] Tighten an existing config directory to 0700 on save; `os.MkdirAll` leaves a pre-existing 0755
+- [x] Tighten an existing config directory to 0700 on save; `os.MkdirAll` leaves a pre-existing 0755
   `~/.config/cml` as is, so the `cml doctor` permissions hint never clears the failure
-- [ ] Stop printing usage text on runtime errors (a failed `cml doctor` prints it today); keep it for
+- [x] Stop printing usage text on runtime errors (a failed `cml doctor` prints it today); keep it for
   flag and argument errors
-- [ ] Strip release binaries with `-s -w` in `release.yml`, matching `make build`
+- [x] Strip release binaries with `-s -w` in `release.yml`, matching `make build`
 
 #### Error handling — v0.12.0
 

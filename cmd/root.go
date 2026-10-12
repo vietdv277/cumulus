@@ -41,12 +41,17 @@ Provider-Specific Commands:
 Legacy Commands (still available):
   cml ec2 ls                 # List EC2 instances
   cml profile                # Manage profiles`,
+	// Execute prints the error once; usage is only for flag and argument errors.
+	SilenceErrors: true,
+	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+		cmd.SilenceUsage = true
+	},
 }
 
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }

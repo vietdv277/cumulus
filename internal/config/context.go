@@ -127,6 +127,12 @@ func writeFileAtomic(path string, data []byte) (err error) {
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
+	// MkdirAll keeps an existing directory's mode, so tighten one left group/world accessible.
+	if info, statErr := os.Stat(dir); statErr == nil && info.Mode().Perm()&0077 != 0 {
+		if err = os.Chmod(dir, 0700); err != nil {
+			return fmt.Errorf("chmod config directory: %w", err)
+		}
+	}
 
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {

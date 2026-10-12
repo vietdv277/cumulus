@@ -210,10 +210,8 @@ func TestTunnelRmRemovesSavedTunnel(t *testing.T) {
 func executeForError(t *testing.T, args []string) error {
 	t.Helper()
 	rootCmd.SilenceUsage = true
-	rootCmd.SilenceErrors = true
 	t.Cleanup(func() {
 		rootCmd.SilenceUsage = false
-		rootCmd.SilenceErrors = false
 		resetLegacyFlags()
 	})
 

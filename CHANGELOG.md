@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Saving the config tightens an existing group/world-accessible config
+  directory to 0700, so the `cml doctor` permissions hint now clears the failure.
+- Runtime errors (for example a failed `cml doctor`) no longer print the
+  command's usage text; flag and argument errors still do.
+- Errors are printed once instead of twice.
+
+### Changed
+- Release binaries are stripped (`-s -w`), about 30% smaller.
+
 ## [0.11.0] — 2026-10-12
 
 ### Added

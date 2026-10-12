@@ -37,7 +37,7 @@ jobs:
           VERSION=${{ steps.version.outputs.VERSION }}
           COMMIT=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          LDFLAGS="-X github.com/vietdv277/cumulus/cmd.Version=${VERSION} -X github.com/vietdv277/cumulus/cmd.Commit=${COMMIT} -X github.com/vietdv277/cumulus/cmd.BuildDate=${BUILD_DATE}"
+          LDFLAGS="-s -w -X github.com/vietdv277/cumulus/cmd.Version=${VERSION} -X github.com/vietdv277/cumulus/cmd.Commit=${COMMIT} -X github.com/vietdv277/cumulus/cmd.BuildDate=${BUILD_DATE}"
 
           # Linux amd64
           GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/cml-linux-amd64 .
