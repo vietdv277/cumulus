@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
-	"github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -85,28 +84,9 @@ func init() {
 }
 
 func getStorageProvider(ctx context.Context) (provider.StorageProvider, error) {
-	var ctxConfig *config.Context
-	var ctxName string
-	var err error
-
-	if storageContextFlag != "" {
-		cfg, loadErr := config.LoadCMLConfig()
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		ctxConfig = cfg.Contexts[storageContextFlag]
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("context %q not found", storageContextFlag)
-		}
-		ctxName = storageContextFlag
-	} else {
-		ctxConfig, ctxName, err = config.GetCurrentContext()
-		if err != nil {
-			return nil, err
-		}
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("no context set. Use 'cml use <context>' to set one")
-		}
+	ctxConfig, ctxName, err := resolveContext(storageContextFlag)
+	if err != nil {
+		return nil, err
 	}
 
 	switch ctxConfig.Provider {

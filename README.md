@@ -119,15 +119,16 @@ cml vm connect web-01
 Contexts store the provider, credentials reference, and region so you never have to repeat them.
 
 ```bash
-# Switch active context
+# Switch active context (full name or alias)
 cml use aws:prod
+cml use prod                # if aliases: {prod: aws:prod} is configured
 cml use gcp:staging
 
-# Add a new context
+# Add a new context (provider part is case-insensitive; AWS:dev is stored as aws:dev)
 cml use add aws:dev  --profile dev --region eu-west-1
 cml use add gcp:dev  --project dev-project --region europe-west1
 
-# Update individual fields without replacing the whole context
+# Update individual fields without replacing the whole context (aliases work too)
 cml use update aws:prod --region us-west-2
 cml use update gcp:prod --bastion bastion-host --bastion-project infra-proj \
     --bastion-zone asia-southeast1-b --bastion-iap
@@ -135,7 +136,7 @@ cml use update gcp:prod --bastion bastion-host --bastion-project infra-proj \
 # Remove the bastion from a context
 cml use update gcp:prod --bastion ""
 
-# Delete a context
+# Delete a context (aliases work too)
 cml use delete aws:old-env
 
 # List all contexts
@@ -145,6 +146,15 @@ cml ctx -i                # interactive selector
 # Show current context and auth status
 cml status
 ```
+
+`cml use` fails with exit code 1 when the context doesn't exist, so scripts
+like `cml use aws:prd && cml secrets delete x` never run in the wrong context.
+
+Context-aware commands (`vm`, `db`, `secrets`, `storage`, `k8s`) also accept
+`--context <name-or-alias>` to override per-command. They ignore the legacy
+`-p/--profile` and `-r/--region` flags with a clear error — use `--context`
+or `cml use` instead. The legacy commands (`ec2`, `asg`, `lb`, `vpc`,
+`profile`) still accept `-p/-r`.
 
 ### Context config
 
@@ -157,7 +167,7 @@ contexts:
     provider: aws
     profile: prod-sso
     region: us-east-1
-    # Optional — used by `cml k8s connect` to tunnel through an SSM bastion
+    # Optional — used by `cml k8s connect` and `cml db connect` to tunnel through an SSM bastion
     bastion: i-013xxxxx
     bastion_port: 8888
   gcp:prod:
@@ -168,11 +178,14 @@ contexts:
     bastion_project: infra-project
     bastion_zone: asia-southeast1-b
     bastion_iap: true
+aliases:                # short names → full context names
+  prod: aws:prod
+  gcp: gcp:prod
 ```
 
 ## VM commands
 
-All `vm` subcommands operate in the current context. Pass `--context <name>` to target a different one without switching.
+All `vm` subcommands operate in the current context. Pass `--context <name-or-alias>` to target a different one without switching.
 
 ```bash
 # List running VMs (default)
@@ -238,6 +251,10 @@ cml db get prod-pg                       # show details
 
 # Port-forward to a private database (AWS: via SSM bastion)
 cml db connect prod-pg --via i-0abc123 --local-port 5432
+
+# --via defaults to the context's bastion if one is configured
+# (cml use update aws:prod --bastion i-013xxxxx)
+cml db connect prod-pg
 ```
 
 ## Object storage
