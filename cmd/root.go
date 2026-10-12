@@ -57,6 +57,7 @@ func init() {
 	// Global persistent flags (available to all subcommands)
 	rootCmd.PersistentFlags().StringVarP(&profile, "profile", "p", "", "AWS profile to use")
 	rootCmd.PersistentFlags().StringVarP(&region, "region", "r", "", "AWS region to use")
+	rootCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Output format (table, json, yaml)")
 
 	// Bind flags to viper
 	_ = viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))

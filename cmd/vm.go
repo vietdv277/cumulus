@@ -199,6 +199,14 @@ func getVMProvider(ctx context.Context) (provider.VMProvider, error) {
 }
 
 func runVMList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if vmListInteractive && out != OutputTable {
+		return interactiveConflict()
+	}
+
 	ctx := context.Background()
 
 	vmProvider, err := getVMProvider(ctx)
@@ -236,7 +244,7 @@ func runVMList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if len(vms) == 0 {
+	if len(vms) == 0 && out == OutputTable {
 		fmt.Println("No VMs found")
 		return nil
 	}
@@ -277,13 +285,16 @@ func runVMList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Print table
-	printVMTable(vms)
-
-	return nil
+	// Print table or machine-readable document
+	return render(os.Stdout, out, vms, func() { printVMTable(vms) })
 }
 
 func runVMGet(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	vmProvider, err := getVMProvider(ctx)
@@ -297,9 +308,7 @@ func runVMGet(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print VM details
-	printVMDetails(vm)
-
-	return nil
+	return render(os.Stdout, out, vm, func() { printVMDetails(vm) })
 }
 
 func runVMConnect(cmd *cobra.Command, args []string) error {

@@ -106,6 +106,11 @@ func init() {
 }
 
 func runASGList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -124,16 +129,20 @@ func runASGList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list Auto Scaling Groups: %w", err)
 	}
 
-	if len(groups) == 0 {
+	if len(groups) == 0 && out == OutputTable {
 		fmt.Println("No Auto Scaling Groups found")
 		return nil
 	}
 
-	ui.PrintASGTable(groups)
-	return nil
+	return render(os.Stdout, out, groups, func() { ui.PrintASGTable(groups) })
 }
 
 func runASGDescribe(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -148,6 +157,9 @@ func runASGDescribe(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		asgName = args[0]
 	} else {
+		if out != OutputTable {
+			return fmt.Errorf("--output json/yaml requires an ASG name (interactive selection not supported)")
+		}
 		// Interactive selection
 		groups, err := client.ListAutoScalingGroups(nil)
 		if err != nil {
@@ -171,8 +183,7 @@ func runASGDescribe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to describe ASG: %w", err)
 	}
 
-	ui.PrintASGDetails(asg)
-	return nil
+	return render(os.Stdout, out, asg, func() { ui.PrintASGDetails(asg) })
 }
 
 func runASGScale(cmd *cobra.Command, args []string) error {

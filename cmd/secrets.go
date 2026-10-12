@@ -167,6 +167,11 @@ func getSecretsProvider(ctx context.Context) (provider.SecretsProvider, error) {
 }
 
 func runSecretsList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	source, err := secretsListSource(secretsSSMOnly, secretsSMOnly)
 	if err != nil {
 		return err
@@ -191,15 +196,12 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if len(secrets) == 0 {
+	if len(secrets) == 0 && out == OutputTable {
 		fmt.Println("No secrets found")
 		return nil
 	}
 
-	// Print table
-	printSecretsTable(secrets)
-
-	return nil
+	return render(os.Stdout, out, secrets, func() { printSecretsTable(secrets) })
 }
 
 // secretsListSource maps the --ssm-only/--sm-only flags to a backend selection.
@@ -217,6 +219,11 @@ func secretsListSource(ssmOnly, smOnly bool) (provider.SecretSource, error) {
 }
 
 func runSecretsGet(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	secretsProvider, err := getSecretsProvider(ctx)
@@ -230,9 +237,7 @@ func runSecretsGet(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print secret details
-	printSecretDetails(secretValue)
-
-	return nil
+	return render(os.Stdout, out, secretValue, func() { printSecretDetails(secretValue) })
 }
 
 func runSecretsSet(cmd *cobra.Command, args []string) error {

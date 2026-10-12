@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -12,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	internalConfig "github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/output"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
 
@@ -119,6 +122,11 @@ func getSSMClient() (*ssm.Client, error) {
 }
 
 func runSSMParamList(cmd *cobra.Command, args []string) error {
+	out, err := output.Format(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	client, err := getSSMClient()
@@ -154,9 +162,9 @@ func runSSMParamList(cmd *cobra.Command, args []string) error {
 		}
 
 		for _, p := range page.Parameters {
-			lastMod := ""
+			var lastMod time.Time
 			if p.LastModifiedDate != nil {
-				lastMod = p.LastModifiedDate.Format("2006-01-02 15:04")
+				lastMod = *p.LastModifiedDate
 			}
 			params = append(params, paramInfo{
 				Name:         deref(p.Name),
@@ -166,18 +174,20 @@ func runSSMParamList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(params) == 0 {
+	if len(params) == 0 && out == output.Table {
 		fmt.Println("No parameters found")
 		return nil
 	}
 
-	// Print table
-	printParamTable(params)
-
-	return nil
+	return output.Render(os.Stdout, out, params, func() { printParamTable(params) })
 }
 
 func runSSMParamGet(cmd *cobra.Command, args []string) error {
+	out, err := output.Format(cmd)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	client, err := getSSMClient()
@@ -187,7 +197,7 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 
 	name := args[0]
 
-	output, err := client.GetParameter(ctx, &ssm.GetParameterInput{
+	param, err := client.GetParameter(ctx, &ssm.GetParameterInput{
 		Name:           &name,
 		WithDecryption: boolPtr(true),
 	})
@@ -195,7 +205,7 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get parameter: %w", err)
 	}
 
-	value := deref(output.Parameter.Value)
+	value := deref(param.Parameter.Value)
 
 	if ssmParamDecode {
 		// Base64 decode
@@ -204,6 +214,10 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to decode value: %w", err)
 		}
 		value = decoded
+	}
+
+	if out != output.Table {
+		return output.Render(os.Stdout, out, value, nil)
 	}
 
 	fmt.Println(value)
@@ -241,9 +255,9 @@ func runSSMParamSet(cmd *cobra.Command, args []string) error {
 }
 
 type paramInfo struct {
-	Name         string
-	Type         string
-	LastModified string
+	Name         string    `json:"name" yaml:"name"`
+	Type         string    `json:"type" yaml:"type"`
+	LastModified time.Time `json:"last_modified" yaml:"last_modified"`
 }
 
 func printParamTable(params []paramInfo) {
@@ -295,7 +309,7 @@ func printParamTable(params []paramInfo) {
 		sb.WriteString(ui.TypeStyle.Render(cell))
 		sb.WriteString(ui.BorderStyle.Render(ui.Vertical))
 
-		cell = " " + padStr(p.LastModified, widths[2]) + " "
+		cell = " " + padStr(paramLastModified(p.LastModified), widths[2]) + " "
 		sb.WriteString(ui.MutedStyle.Render(cell))
 		sb.WriteString(ui.BorderStyle.Render(ui.Vertical))
 
@@ -315,6 +329,15 @@ func printParamTable(params []paramInfo) {
 
 	fmt.Print(sb.String())
 	fmt.Printf("  %d parameters\n", len(params))
+}
+
+// paramLastModified formats the table-mode timestamp, keeping the previous
+// "2006-01-02 15:04" column rendering.
+func paramLastModified(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02 15:04")
 }
 
 func padStr(s string, width int) string {

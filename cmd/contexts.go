@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -33,13 +34,31 @@ func init() {
 	contextsCmd.Flags().BoolVarP(&ctxInteractive, "interactive", "i", false, "Interactive selection mode")
 }
 
+// contextEntry is the stable json/yaml shape of a configured context.
+type contextEntry struct {
+	Name     string `json:"name" yaml:"name"`
+	Provider string `json:"provider" yaml:"provider"`
+	Profile  string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	Project  string `json:"project,omitempty" yaml:"project,omitempty"`
+	Region   string `json:"region,omitempty" yaml:"region,omitempty"`
+	Current  bool   `json:"current" yaml:"current"`
+}
+
 func runContexts(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+	if ctxInteractive && out != OutputTable {
+		return interactiveConflict()
+	}
+
 	contexts, current, err := config.ListContexts()
 	if err != nil {
 		return fmt.Errorf("failed to list contexts: %w", err)
 	}
 
-	if len(contexts) == 0 {
+	if len(contexts) == 0 && out == OutputTable {
 		fmt.Println("No contexts configured.")
 		fmt.Println()
 		fmt.Println("Add a context with:")
@@ -73,6 +92,22 @@ func runContexts(cmd *cobra.Command, args []string) error {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+
+	if out != OutputTable {
+		entries := make([]contextEntry, 0, len(names))
+		for _, name := range names {
+			ctx := contexts[name]
+			entries = append(entries, contextEntry{
+				Name:     name,
+				Provider: ctx.Provider,
+				Profile:  ctx.Profile,
+				Project:  ctx.Project,
+				Region:   ctx.Region,
+				Current:  name == current,
+			})
+		}
+		return render(os.Stdout, out, entries, nil)
+	}
 
 	// Compute column widths from actual content
 	w0 := runewidth.StringWidth("CONTEXT")

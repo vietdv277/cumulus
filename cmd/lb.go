@@ -3,12 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/ui"
+	"github.com/vietdv277/cumulus/pkg/types"
 )
 
 var lbCmd = &cobra.Command{
@@ -60,7 +62,34 @@ func init() {
 	lbCmd.AddCommand(lbTargetsCmd)
 }
 
+// lbDetail is the stable json/yaml shape of `cml lb describe <name>`.
+type lbDetail struct {
+	LoadBalancer *types.LoadBalancer `json:"load_balancer" yaml:"load_balancer"`
+	Listeners    []types.Listener    `json:"listeners" yaml:"listeners"`
+	TargetGroups []types.TargetGroup `json:"target_groups" yaml:"target_groups"`
+}
+
+// targetGroupTargets is one target group with its resolved targets.
+type targetGroupTargets struct {
+	Name     string         `json:"name" yaml:"name"`
+	Protocol string         `json:"protocol" yaml:"protocol"`
+	Port     int            `json:"port" yaml:"port"`
+	Targets  []types.Target `json:"targets" yaml:"targets"`
+	Error    string         `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+// lbTargetsOutput is the stable json/yaml shape of `cml lb targets <name>`.
+type lbTargetsOutput struct {
+	LoadBalancer string               `json:"load_balancer" yaml:"load_balancer"`
+	TargetGroups []targetGroupTargets `json:"target_groups" yaml:"target_groups"`
+}
+
 func runLBList(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -75,16 +104,20 @@ func runLBList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list load balancers: %w", err)
 	}
 
-	if len(lbs) == 0 {
+	if len(lbs) == 0 && out == OutputTable {
 		fmt.Println("No load balancers found")
 		return nil
 	}
 
-	ui.PrintLBTable(lbs)
-	return nil
+	return render(os.Stdout, out, lbs, func() { ui.PrintLBTable(lbs) })
 }
 
 func runLBDescribe(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -109,6 +142,9 @@ func runLBDescribe(cmd *cobra.Command, args []string) error {
 		}
 		lbARN = lb.ARN
 	} else {
+		if out != OutputTable {
+			return fmt.Errorf("--output json/yaml requires a load balancer name (interactive selection not supported)")
+		}
 		// Interactive selector
 		lbs, err := client.ListLoadBalancers()
 		if err != nil {
@@ -133,6 +169,22 @@ func runLBDescribe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load balancer %s not found", lbName)
 	}
 
+	// Get listeners
+	listeners, err := client.ListListeners(lbARN)
+	if err != nil {
+		return fmt.Errorf("failed to list listeners: %w", err)
+	}
+
+	// Get target groups
+	tgs, err := client.ListTargetGroups(lbARN)
+	if err != nil {
+		return fmt.Errorf("failed to list target groups: %w", err)
+	}
+
+	if out != OutputTable {
+		return render(os.Stdout, out, lbDetail{LoadBalancer: lb, Listeners: listeners, TargetGroups: tgs}, nil)
+	}
+
 	// Print LB details
 	fmt.Println()
 	fmt.Printf("Load Balancer: %s\n", lb.Name)
@@ -145,24 +197,12 @@ func runLBDescribe(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Created:   %s\n", lb.CreatedAt.Format("2006-01-02 15:04:05"))
 	fmt.Println()
 
-	// Get listeners
-	listeners, err := client.ListListeners(lbARN)
-	if err != nil {
-		return fmt.Errorf("failed to list listeners: %w", err)
-	}
-
 	if len(listeners) > 0 {
 		fmt.Println("Listeners:")
 		for _, l := range listeners {
 			fmt.Printf("  - %s:%d\n", l.Protocol, l.Port)
 		}
 		fmt.Println()
-	}
-
-	// Get target groups
-	tgs, err := client.ListTargetGroups(lbARN)
-	if err != nil {
-		return fmt.Errorf("failed to list target groups: %w", err)
 	}
 
 	if len(tgs) > 0 {
@@ -176,6 +216,11 @@ func runLBDescribe(cmd *cobra.Command, args []string) error {
 }
 
 func runLBTargets(cmd *cobra.Command, args []string) error {
+	out, err := outputFormat(cmd)
+	if err != nil {
+		return err
+	}
+
 	client, err := aws.NewClient(
 		context.Background(),
 		aws.WithProfile(GetProfile()),
@@ -200,6 +245,9 @@ func runLBTargets(cmd *cobra.Command, args []string) error {
 		}
 		lbARN = lb.ARN
 	} else {
+		if out != OutputTable {
+			return fmt.Errorf("--output json/yaml requires a load balancer name (interactive selection not supported)")
+		}
 		// Interactive selector
 		lbs, err := client.ListLoadBalancers()
 		if err != nil {
@@ -220,9 +268,24 @@ func runLBTargets(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list target groups: %w", err)
 	}
 
-	if len(tgs) == 0 {
+	if len(tgs) == 0 && out == OutputTable {
 		fmt.Printf("No target groups found for %s\n", lbName)
 		return nil
+	}
+
+	if out != OutputTable {
+		output := lbTargetsOutput{LoadBalancer: lbName, TargetGroups: []targetGroupTargets{}}
+		for _, tg := range tgs {
+			tgt := targetGroupTargets{Name: tg.Name, Protocol: tg.Protocol, Port: tg.Port, Targets: []types.Target{}}
+			targets, err := client.ListTargets(tg.ARN)
+			if err != nil {
+				tgt.Error = err.Error()
+			} else {
+				tgt.Targets = targets
+			}
+			output.TargetGroups = append(output.TargetGroups, tgt)
+		}
+		return render(os.Stdout, out, output, nil)
 	}
 
 	fmt.Printf("Targets for %s:\n\n", lbName)
