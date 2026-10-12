@@ -22,8 +22,6 @@ All imports must use this full path.
 
 ## Build & Test
 
-> There are currently no `_test.go` files in the repository. The test commands below are valid but will report nothing to test.
-
 ```bash
 # Build (injects version/commit/date via ldflags)
 make build
@@ -83,13 +81,13 @@ contexts:
     bastion_iap: true
 aliases:                           # short names → full context names
   prod: aws:prod
-tunnels:                           # saved tunnel configs (used by vm tunnel --save)
+tunnels:                           # saved tunnel configs — reserved, not yet used by any command
   db-prod:
     context: aws:prod
     target: i-0abc123
     remote_port: 5432
     local_port: 5432
-defaults:
+defaults:                          # reserved, not yet read by commands
   output: table                    # table | json | yaml
   interactive: false
   region_fallback: us-east-1
@@ -105,6 +103,7 @@ Three migration helpers run at startup for legacy config locations:
 - `MigrateFromMacOSConfig()` — from `~/Library/Application Support/cml/config.yaml`
 
 `internal/config/config.go` is legacy-only; all active config logic lives in `internal/config/context.go`.
+The config file is written atomically (temp file + rename) with mode 0600, in a 0700 directory.
 
 ### Provider Interface (`pkg/provider/interfaces.go`)
 
@@ -135,7 +134,9 @@ Uses the functional options pattern:
 client, err := aws.NewClient(ctx, aws.WithProfile("prod"), aws.WithRegion("us-east-1"))
 ```
 
-The `Client` struct holds sub-clients for EC2, SSM, STS, Auto Scaling, ELBv2, and Secrets Manager.
+The `Client` struct holds sub-clients for EC2, Auto Scaling, ELBv2, RDS, S3, and EKS.
+They are constructed lazily on first use; SSM and STS calls go through the shared
+AWS config loaded into the client.
 
 ### GCP Client (`internal/gcp/client.go`)
 
