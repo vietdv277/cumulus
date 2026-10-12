@@ -104,7 +104,7 @@ contexts:
     bastion_iap: true
 aliases:                           # short names → full context names
   prod: aws:prod
-tunnels:                           # saved tunnel configs — reserved, not yet used by any command
+tunnels:                           # saved tunnel configs (cml vm tunnel --save <name>, cml tunnel list/start/rm)
   db-prod:
     context: aws:prod
     target: i-0abc123
@@ -227,7 +227,11 @@ cml
 │   ├── list               # List VMs (--state, --name, --tag, --interactive)
 │   ├── get <id|name>      # Get VM details
 │   ├── connect <id|name>  # SSH/SSM (AWS) or gcloud ssh (GCP)
-│   ├── tunnel <id> ...    # Port forwarding via SSM or gcloud
+│   ├── tunnel <id> ...    # Port forwarding via SSM or gcloud (--save <name> to store, --force to overwrite)
+├── tunnel                  # Saved tunnels (stored under tunnels: in the config)
+│   ├── list               # List saved tunnels (--output json/yaml)
+│   ├── start <name>       # Start a saved tunnel with its saved context (--local-port)
+│   └── rm <name>          # Remove a saved tunnel
 │   ├── start/stop/reboot  # Lifecycle (stop/reboot confirm; --yes)
 ├── secrets                # Unified secrets (SSM + Secrets Manager)
 │   ├── list               # List secrets (--ssm-only / --sm-only)
@@ -263,7 +267,7 @@ cml
 ├── vpc                    # VPC listing/selection
 ├── asg                    # Auto Scaling Group commands
 ├── lb                     # Load Balancer commands
-├── aws
+├── aws (-c/--context)      # AWS-specific commands; --context overrides the active context
 │   ├── ssm param          # SSM Parameter Store (list, get, set)
 │   └── iam whoami         # Show caller identity (STS)
 └── version                # CLI version info

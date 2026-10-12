@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
+	"github.com/vietdv277/cumulus/internal/config"
 	gcpinternal "github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
@@ -80,12 +81,14 @@ var vmTunnelCmd = &cobra.Command{
 	Short: "Create a tunnel to a VM",
 	Long: `Create a port forwarding tunnel to a VM.
 
-If local-port is not specified, it defaults to remote-port.
+If local-port is not specified, it defaults to remote-port. Pass --save <name>
+to also store the tunnel configuration for 'cml tunnel start'; saving over an
+existing name needs --force.
 
 Examples:
   cml vm tunnel web-01 3306           # Forward 3306:3306
   cml vm tunnel web-01 3306 13306     # Forward 13306:3306
-  cml vm tunnel db-01 5432            # PostgreSQL tunnel`,
+  cml vm tunnel db-01 5432 --save db-prod   # Save the tunnel for later reuse`,
 	Args: cobra.RangeArgs(2, 3),
 	RunE: runVMTunnel,
 }
@@ -130,6 +133,9 @@ var (
 	vmListInteractive bool
 	vmContextFlag     string
 	vmYes             bool
+
+	vmTunnelSave  string
+	vmTunnelForce bool
 )
 
 func init() {
@@ -151,6 +157,10 @@ func init() {
 	// Destructive action confirmation
 	vmStopCmd.Flags().BoolVarP(&vmYes, "yes", "y", false, "Skip confirmation prompt")
 	vmRebootCmd.Flags().BoolVarP(&vmYes, "yes", "y", false, "Skip confirmation prompt")
+
+	// Save the tunnel configuration (started as usual afterwards)
+	vmTunnelCmd.Flags().StringVar(&vmTunnelSave, "save", "", "Save the tunnel configuration under this name")
+	vmTunnelCmd.Flags().BoolVar(&vmTunnelForce, "force", false, "With --save: overwrite an existing tunnel of the same name")
 
 	// Global context override
 	vmCmd.PersistentFlags().StringVarP(&vmContextFlag, "context", "c", "", "Use specific context")
@@ -326,16 +336,11 @@ func runVMConnect(cmd *cobra.Command, args []string) error {
 func runVMTunnel(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	vmProvider, err := getVMProvider(ctx)
-	if err != nil {
-		return err
-	}
-
 	// Parse ports
 	remotePort := 0
 	localPort := 0
 
-	_, err = fmt.Sscanf(args[1], "%d", &remotePort)
+	_, err := fmt.Sscanf(args[1], "%d", &remotePort)
 	if err != nil {
 		return fmt.Errorf("invalid remote port: %s", args[1])
 	}
@@ -349,6 +354,18 @@ func runVMTunnel(cmd *cobra.Command, args []string) error {
 		localPort = remotePort
 	}
 
+	// Store the configuration first, then start the tunnel as usual.
+	if vmTunnelSave != "" {
+		if err := saveVMTunnel(args[0], remotePort, localPort); err != nil {
+			return err
+		}
+	}
+
+	vmProvider, err := getVMProvider(ctx)
+	if err != nil {
+		return err
+	}
+
 	opts := &provider.TunnelOptions{
 		LocalPort:  localPort,
 		RemotePort: remotePort,
@@ -358,6 +375,27 @@ func runVMTunnel(cmd *cobra.Command, args []string) error {
 	fmt.Println("Press Ctrl+C to close the tunnel")
 
 	return vmProvider.Tunnel(ctx, args[0], opts)
+}
+
+// saveVMTunnel stores the tunnel configuration under the resolved context name.
+func saveVMTunnel(target string, remotePort, localPort int) error {
+	_, ctxName, err := resolveContext(vmContextFlag)
+	if err != nil {
+		return err
+	}
+
+	if err := config.SaveTunnel(vmTunnelSave, &config.TunnelConfig{
+		Context:    ctxName,
+		Target:     target,
+		RemotePort: remotePort,
+		LocalPort:  localPort,
+	}, vmTunnelForce); err != nil {
+		return err
+	}
+
+	fmt.Printf("Saved tunnel: %s (context %s, target %s, local %d -> remote %d)\n",
+		vmTunnelSave, ctxName, target, localPort, remotePort)
+	return nil
 }
 
 func runVMStart(cmd *cobra.Command, args []string) error {
