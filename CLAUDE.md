@@ -307,6 +307,9 @@ cml
   linux/darwin/windows, so `GOOS=windows go build ./...` must pass
 - Interactive selectors return `selection cancelled` on Esc/q/Ctrl-C (exit 0); any other
   selector error is returned
+- `rootCmd` silences cobra's error printing (`Execute` prints `Error: ...` once) and sets
+  `SilenceUsage` in its `PersistentPreRun`, so usage prints only for flag and argument errors;
+  a subcommand defining its own `PersistentPreRun` must keep that behaviour
 - Data-printing commands route through `render` (`cmd/output.go` → `internal/output`); with
   json/yaml, stdout carries only the document and empty results print `[]`
 

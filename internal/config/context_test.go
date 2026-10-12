@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -122,6 +123,28 @@ func TestMigrateFromOldConfigCreatesMissingContext(t *testing.T) {
 	}
 	if cfg.CurrentContext != "aws:prod" {
 		t.Errorf("current context = %q, want aws:prod", cfg.CurrentContext)
+	}
+}
+
+func TestSaveCMLConfigTightensExistingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits")
+	}
+	_, xdg := isolateHome(t)
+	dir := filepath.Join(xdg, "cml")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := SaveCMLConfig(&CMLConfig{}); err != nil {
+		t.Fatalf("SaveCMLConfig() error = %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat config dir: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0700 {
+		t.Errorf("config dir mode = %v, want 0700", got)
 	}
 }
 

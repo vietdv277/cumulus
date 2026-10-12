@@ -136,10 +136,8 @@ func runLogsCmd(t *testing.T, args ...string) error {
 	setTestConfig(t, testConfigYAML)
 
 	rootCmd.SilenceUsage = true
-	rootCmd.SilenceErrors = true
 	t.Cleanup(func() {
 		rootCmd.SilenceUsage = false
-		rootCmd.SilenceErrors = false
 		resetLegacyFlags()
 		resetLogsFlags()
 	})
