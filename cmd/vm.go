@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -128,6 +129,7 @@ var (
 	vmListTags        []string
 	vmListInteractive bool
 	vmContextFlag     string
+	vmYes             bool
 )
 
 func init() {
@@ -145,6 +147,10 @@ func init() {
 	vmListCmd.Flags().StringVar(&vmListName, "name", "", "Filter by name pattern")
 	vmListCmd.Flags().StringArrayVarP(&vmListTags, "tag", "t", nil, "Filter by tag (key=value)")
 	vmListCmd.Flags().BoolVarP(&vmListInteractive, "interactive", "i", false, "Interactive selection mode")
+
+	// Destructive action confirmation
+	vmStopCmd.Flags().BoolVarP(&vmYes, "yes", "y", false, "Skip confirmation prompt")
+	vmRebootCmd.Flags().BoolVarP(&vmYes, "yes", "y", false, "Skip confirmation prompt")
 
 	// Global context override
 	vmCmd.PersistentFlags().StringVarP(&vmContextFlag, "context", "c", "", "Use specific context")
@@ -238,7 +244,10 @@ func runVMList(cmd *cobra.Command, args []string) error {
 	if vmListInteractive {
 		vm, action, err := ui.SelectVM(vms)
 		if err != nil {
-			return nil // cancelled — silent exit
+			if isSelectorCancelled(err) {
+				return nil // cancelled — silent exit
+			}
+			return err
 		}
 		switch action {
 		case ui.VMActionConnect:
@@ -250,6 +259,16 @@ func runVMList(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("Starting VM: %s\n", vm.Name)
 		case ui.VMActionStop:
+			ok, err := confirm(os.Stdin, os.Stdout,
+				fmt.Sprintf("Stop instance %s in context %s? [y/N]",
+					vmTargetLabel(vm.Name, vm.ID), contextNameForPrompt(vmContextFlag)))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Println("Stop cancelled")
+				return nil
+			}
 			if err := vmProvider.Stop(ctx, vm.ID); err != nil {
 				return err
 			}
@@ -356,11 +375,34 @@ func runVMStop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := vmProvider.Stop(ctx, args[0]); err != nil {
+	// Act on the confirmed instance so it is exactly the one named in the prompt.
+	target := args[0]
+	if !vmYes {
+		// Resolve the VM first so the prompt names both the instance name and ID.
+		vm, err := vmProvider.Get(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		target = vm.ID
+		proceed, err := confirmAction(false, os.Stdin, os.Stdout,
+			fmt.Sprintf("Stop instance %s in context %s? [y/N]",
+				vmTargetLabel(vm.Name, vm.ID), contextNameForPrompt(vmContextFlag)),
+			fmt.Sprintf("refusing to stop %s without confirmation; pass --yes", vm.ID),
+		)
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			fmt.Println("Stop cancelled")
+			return nil
+		}
+	}
+
+	if err := vmProvider.Stop(ctx, target); err != nil {
 		return err
 	}
 
-	fmt.Printf("Stopping VM: %s\n", args[0])
+	fmt.Printf("Stopping VM: %s\n", target)
 	return nil
 }
 
@@ -372,11 +414,34 @@ func runVMReboot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := vmProvider.Reboot(ctx, args[0]); err != nil {
+	// Act on the confirmed instance so it is exactly the one named in the prompt.
+	target := args[0]
+	if !vmYes {
+		// Resolve the VM first so the prompt names both the instance name and ID.
+		vm, err := vmProvider.Get(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		target = vm.ID
+		proceed, err := confirmAction(false, os.Stdin, os.Stdout,
+			fmt.Sprintf("Reboot instance %s in context %s? [y/N]",
+				vmTargetLabel(vm.Name, vm.ID), contextNameForPrompt(vmContextFlag)),
+			fmt.Sprintf("refusing to reboot %s without confirmation; pass --yes", vm.ID),
+		)
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			fmt.Println("Reboot cancelled")
+			return nil
+		}
+	}
+
+	if err := vmProvider.Reboot(ctx, target); err != nil {
 		return err
 	}
 
-	fmt.Printf("Rebooting VM: %s\n", args[0])
+	fmt.Printf("Rebooting VM: %s\n", target)
 	return nil
 }
 

@@ -174,7 +174,10 @@ func runK8sList(cmd *cobra.Command, args []string) error {
 	if k8sListInteractive {
 		selected, err := ui.SelectK8sCluster(clusters)
 		if err != nil {
-			return nil
+			if isSelectorCancelled(err) {
+				return nil // cancelled — silent exit
+			}
+			return err
 		}
 		fmt.Printf("Updating kubeconfig for %s...\n", selected.Name)
 		return p.UpdateKubeconfig(ctx, selected.Name)

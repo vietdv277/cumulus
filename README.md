@@ -212,6 +212,8 @@ cml vm stop   web-01
 cml vm reboot web-01
 ```
 
+`vm stop` and `vm reboot` ask for confirmation before acting; pass `--yes` to skip the prompt (e.g. in scripts).
+
 ### GCP bastion tunneling
 
 When a bastion is configured on a GCP context, `vm connect` and `vm tunnel` automatically route through it:
@@ -235,10 +237,23 @@ cml vm tunnel  my-private-instance 5432  # → SSH tunnel via bastion
 
 cml secrets list                        # list all secrets
 cml secrets list /app/                  # filter by prefix
+cml secrets list --ssm-only             # only SSM Parameter Store
+cml secrets list --sm-only              # only Secrets Manager
 cml secrets get  /app/db-password       # get value
 cml secrets set  /app/db-password s3cr3t  # create or update
-cml secrets delete /app/old-param       # delete
+cml secrets delete /app/old-param       # delete (asks for confirmation)
 ```
+
+Routing: names starting with `/` go to SSM Parameter Store, everything else to
+Secrets Manager. Force a backend with an explicit `ssm:` or `sm:` prefix
+(`cml secrets get sm:/prod/api-key`); the prefix is stripped from the name.
+Without a prefix, `get` falls back to SSM when the secret is not found in
+Secrets Manager; `delete` never touches an SSM parameter behind a plain name —
+it errors and points at the `ssm:` prefix instead.
+
+`secrets delete` asks for confirmation. Secrets Manager secrets stay recoverable
+for 7 days after deletion unless `--force` is passed; SSM parameters are deleted
+immediately and cannot be recovered. Pass `--yes` to skip the prompt in scripts.
 
 ## Databases
 
@@ -272,6 +287,8 @@ cml storage cp s3://my-bucket/key ./           # download
 cml storage sync ./dir s3://my-bucket/dir --delete
 cml storage presign s3://my-bucket/key         # presigned GET URL
 ```
+
+`sync --delete` asks for confirmation before deleting destination objects; pass `--yes` to skip the prompt.
 
 ## Kubernetes
 
