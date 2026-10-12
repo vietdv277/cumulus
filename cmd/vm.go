@@ -172,7 +172,12 @@ func getVMProvider(ctx context.Context) (provider.VMProvider, error) {
 	if err != nil {
 		return nil, err
 	}
+	return buildVMProvider(ctx, ctxConfig, ctxName)
+}
 
+// buildVMProvider creates the provider for an already-resolved context.
+// Shared with tunnel start, which targets a saved tunnel's own context.
+func buildVMProvider(ctx context.Context, ctxConfig *config.Context, ctxName string) (provider.VMProvider, error) {
 	// Create provider based on context
 	switch ctxConfig.Provider {
 	case "aws":

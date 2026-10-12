@@ -9,9 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 
-	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
-	gcpinternal "github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 )
@@ -111,7 +109,7 @@ func runTunnelList(cmd *cobra.Command, args []string) error {
 
 // tunnelProviderFactory builds the VM provider for a saved tunnel's context.
 // Package var so tests can inject a fake provider.
-var tunnelProviderFactory = buildTunnelProvider
+var tunnelProviderFactory = buildVMProvider
 
 func runTunnelStart(cmd *cobra.Command, args []string) error {
 	tunnel, err := config.GetTunnelConfig(args[0])
@@ -155,43 +153,6 @@ func runTunnelStart(cmd *cobra.Command, args []string) error {
 	fmt.Println("Press Ctrl+C to close the tunnel")
 
 	return vmProvider.Tunnel(ctx, tunnel.Target, opts)
-}
-
-// buildTunnelProvider creates the VM provider for a resolved context,
-// mirroring getVMProvider so tunnel start can target the tunnel's own context.
-func buildTunnelProvider(ctx context.Context, ctxConfig *config.Context, ctxName string) (provider.VMProvider, error) {
-	switch ctxConfig.Provider {
-	case "aws":
-		client, err := aws.NewClient(ctx,
-			aws.WithProfile(ctxConfig.Profile),
-			aws.WithRegion(ctxConfig.Region),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create AWS client: %w", err)
-		}
-		return aws.NewVMProvider(client, ctxConfig.Profile, ctxConfig.Region), nil
-
-	case "gcp":
-		opts := []gcpinternal.Option{
-			gcpinternal.WithProject(ctxConfig.Project),
-			gcpinternal.WithRegion(ctxConfig.Region),
-		}
-		if ctxConfig.Bastion != "" {
-			opts = append(opts,
-				gcpinternal.WithBastion(ctxConfig.Bastion, ctxConfig.BastionZone),
-				gcpinternal.WithBastionProject(ctxConfig.BastionProject),
-				gcpinternal.WithBastionIAP(ctxConfig.BastionIAP),
-			)
-		}
-		gcpClient, err := gcpinternal.NewClient(ctx, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create GCP client: %w", err)
-		}
-		return gcpinternal.NewVMProvider(gcpClient), nil
-
-	default:
-		return nil, fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
-	}
 }
 
 func runTunnelRm(cmd *cobra.Command, args []string) error {
