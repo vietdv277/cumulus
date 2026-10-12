@@ -183,6 +183,60 @@ aliases:                # short names → full context names
   gcp: gcp:prod
 ```
 
+## Aliases
+
+Aliases are short names that resolve to full context names everywhere a
+context name is accepted: `cml use`, `--context`, `use update` and
+`use delete`.
+
+```bash
+cml alias add prod aws:prod         # target must be a real context name
+cml alias add prod gcp:prod --force # overwrite an existing alias
+cml alias list                      # name → context
+cml alias list -o json              # machine-readable
+cml alias rm prod                   # remove (cml alias remove also works)
+```
+
+Rules: an alias name must not contain `:` and must not shadow an existing
+context name; overwriting an existing alias needs `--force`; `rm` of a
+missing alias fails with exit code 1.
+
+Deleting a context with `cml use delete` leaves its aliases dangling.
+`alias list` marks those with `(missing)` and `cml doctor` reports them.
+
+## Doctor
+
+`cml doctor` checks the local setup for common problems. The checks are
+local only — nothing touches the network unless `--online` is passed.
+
+```bash
+cml doctor                # local checks only
+cml doctor --online       # also verify the current context's credentials
+cml doctor -o json        # machine-readable results
+cml doctor -o yaml
+```
+
+Checks:
+
+- the config file exists, parses and has safe permissions (0600 file, 0700 dir)
+- the current context is set and exists
+- aliases point at existing contexts (dangling aliases are reported)
+- saved tunnels point at existing contexts
+- per provider in use: `aws` and `session-manager-plugin` on PATH (AWS),
+  `gcloud` on PATH and Application Default Credentials discoverable (GCP),
+  `kubectl` on PATH (a warning only)
+- the AWS profile named by each AWS context exists in `~/.aws/config` /
+  `~/.aws/credentials` (parsed locally; honours `AWS_CONFIG_FILE` and
+  `AWS_SHARED_CREDENTIALS_FILE`)
+
+With `--online`, the current context's credentials are verified for real:
+STS `GetCallerIdentity` for AWS, a GCP token fetch for GCP.
+
+Output is a table of `✓` ok / `!` warning / `✗` failed lines with a detail
+and a fix hint per check. `-o json|yaml` emits
+`[{check, status, detail, hint}]` with `status` one of `ok|warn|fail`.
+The exit code is 1 when any check fails — warnings do not fail.
+
 ## Output formats
 
 Data-printing commands accept a global `--output table|json|yaml` flag (`-o`): `vm list/get`,

@@ -256,6 +256,10 @@ cml
 │   └── delete <context>   # Remove context
 ├── status                 # Show current context and auth info
 ├── contexts (ctx)         # List all contexts
+├── alias                  # Context aliases
+│   ├── list               # List aliases (name → context; "(missing)" = dangling)
+│   ├── add <name> <ctx>   # Add alias (target must be a real context; --force overwrites)
+│   └── rm <name>          # Remove alias (remove alias also works)
 ├── ec2                    # Legacy AWS EC2 commands
 │   ├── ls                 # List instances
 │   └── ssh                # Interactive SSM session selector (bubbletea TUI)
@@ -266,6 +270,7 @@ cml
 ├── aws
 │   ├── ssm param          # SSM Parameter Store (list, get, set)
 │   └── iam whoami         # Show caller identity (STS)
+├── doctor                 # Local setup checks (config, aliases, tunnels, tools, profiles; --online adds auth checks)
 └── version                # CLI version info
 ```
 
