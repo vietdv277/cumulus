@@ -234,8 +234,9 @@ cml secrets delete /app/old-param       # delete (asks for confirmation)
 Routing: names starting with `/` go to SSM Parameter Store, everything else to
 Secrets Manager. Force a backend with an explicit `ssm:` or `sm:` prefix
 (`cml secrets get sm:/prod/api-key`); the prefix is stripped from the name.
-Without a prefix, `get` and `delete` fall back to the other backend when the
-secret is not found.
+Without a prefix, `get` falls back to SSM when the secret is not found in
+Secrets Manager; `delete` never touches an SSM parameter behind a plain name —
+it errors and points at the `ssm:` prefix instead.
 
 `secrets delete` asks for confirmation. Secrets Manager secrets stay recoverable
 for 7 days after deletion unless `--force` is passed; SSM parameters are deleted

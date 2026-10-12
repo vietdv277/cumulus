@@ -331,7 +331,9 @@ func (p *AWSSecretsProvider) setSecretsManager(ctx context.Context, name, value 
 	return nil
 }
 
-// Delete removes a secret
+// Delete removes a secret. Plain names are deleted from Secrets Manager only:
+// when only an SSM parameter of the same name exists, nothing is deleted and an
+// error points at the explicit ssm: prefix.
 func (p *AWSSecretsProvider) Delete(ctx context.Context, name string, opts provider.DeleteSecretOptions) error {
 	backend, n, fallbackSSM := resolveSecretRoute(name)
 
@@ -348,14 +350,38 @@ func (p *AWSSecretsProvider) Delete(ctx context.Context, name string, opts provi
 
 	_, err := p.sm.DeleteSecret(ctx, input)
 	if err != nil {
-		// Fall back to SSM by the same name when the secret is not in Secrets Manager.
 		var notFound *smTypes.ResourceNotFoundException
+		// Never delete an SSM parameter behind a Secrets Manager not-found.
 		if errors.As(err, &notFound) && fallbackSSM {
-			return p.deleteSSMParameter(ctx, n)
+			return p.ssmDeleteConflict(ctx, n)
 		}
 		return fmt.Errorf("failed to delete secret %s: %w", n, err)
 	}
 	return nil
+}
+
+// ssmDeleteConflict reports what happened when a plain-name Secrets Manager
+// delete found no secret: either nothing exists anywhere, or an SSM parameter
+// of the same name exists and the user must opt in via the ssm: prefix.
+func (p *AWSSecretsProvider) ssmDeleteConflict(ctx context.Context, name string) error {
+	_, err := p.ssm.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           &name,
+		WithDecryption: boolPtr(true),
+	})
+	if err != nil {
+		var notFound *ssmTypes.ParameterNotFound
+		if errors.As(err, &notFound) {
+			return fmt.Errorf("secret %q not found: %w", name, provider.ErrNotFound)
+		}
+		return fmt.Errorf("failed to check SSM parameter %s: %w", name, err)
+	}
+	return ssmDeleteHint(name)
+}
+
+// ssmDeleteHint builds the error telling the user an SSM parameter of the same
+// name exists and must be deleted explicitly.
+func ssmDeleteHint(name string) error {
+	return fmt.Errorf("secret %q not found in Secrets Manager; an SSM parameter with that name exists — run 'cml secrets delete ssm:%s' to delete it permanently", name, name)
 }
 
 func (p *AWSSecretsProvider) deleteSSMParameter(ctx context.Context, name string) error {
