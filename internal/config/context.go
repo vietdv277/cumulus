@@ -4,6 +4,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrContextNotFound is returned when a named context does not exist.
+var ErrContextNotFound = errors.New("context not found")
 
 // Context represents a cloud context configuration
 type Context struct {
@@ -187,16 +191,18 @@ func GetCurrentContext() (*Context, string, error) {
 	return ctx, cfg.CurrentContext, nil
 }
 
-// SetCurrentContext sets the current active context
+// SetCurrentContext sets the current active context, resolving aliases first.
 func SetCurrentContext(name string) error {
 	cfg, err := LoadCMLConfig()
 	if err != nil {
 		return err
 	}
 
+	name = ResolveAliasFrom(cfg, name)
+
 	// Validate context exists
 	if _, ok := cfg.Contexts[name]; !ok {
-		return fmt.Errorf("context %q not found", name)
+		return fmt.Errorf("%w: %q", ErrContextNotFound, name)
 	}
 
 	cfg.CurrentContext = name
@@ -257,11 +263,17 @@ func ResolveAlias(alias string) (string, error) {
 		return "", err
 	}
 
+	return ResolveAliasFrom(cfg, alias), nil
+}
+
+// ResolveAliasFrom resolves an alias against an already-loaded config,
+// returning the original name when it is not an alias.
+func ResolveAliasFrom(cfg *CMLConfig, alias string) string {
 	if target, ok := cfg.Aliases[alias]; ok {
-		return target, nil
+		return target
 	}
 
-	return alias, nil // Return original if not an alias
+	return alias
 }
 
 // GetTunnelConfig returns a saved tunnel configuration

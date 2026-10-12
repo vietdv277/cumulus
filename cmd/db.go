@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
-	"github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -26,7 +25,7 @@ Examples:
   cml db list                          # List databases
   cml db list --engine postgres        # Filter by engine
   cml db get prod-pg                   # Show details
-  cml db connect prod-pg --via bastion # Tunnel via SSM bastion`,
+  cml db connect prod-pg --via i-0abc123def456 # Tunnel via SSM bastion`,
 }
 
 var dbListCmd = &cobra.Command{
@@ -81,28 +80,9 @@ func init() {
 
 // getDBProvider returns a DBProvider for the active or overridden context.
 func getDBProvider(ctx context.Context) (provider.DBProvider, error) {
-	var ctxConfig *config.Context
-	var ctxName string
-	var err error
-
-	if dbContextFlag != "" {
-		cfg, loadErr := config.LoadCMLConfig()
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		ctxConfig = cfg.Contexts[dbContextFlag]
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("context %q not found", dbContextFlag)
-		}
-		ctxName = dbContextFlag
-	} else {
-		ctxConfig, ctxName, err = config.GetCurrentContext()
-		if err != nil {
-			return nil, err
-		}
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("no context set. Use 'cml use <context>' to set one")
-		}
+	ctxConfig, ctxName, err := resolveContext(dbContextFlag)
+	if err != nil {
+		return nil, err
 	}
 
 	switch ctxConfig.Provider {
@@ -169,8 +149,20 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	via := dbConnectVia
+	if via == "" {
+		// Fall back to the context's bastion, like k8s connect does
+		ctxConfig, _, ctxErr := resolveContext(dbContextFlag)
+		if ctxErr == nil {
+			via = ctxConfig.Bastion
+		}
+	}
+	if via == "" {
+		return fmt.Errorf("no bastion for db connect — pass --via <bastion-instance-id> or set one with 'cml use update <context> --bastion i-xxxxxx'")
+	}
+
 	opts := &provider.DBConnectOptions{
-		Via:       dbConnectVia,
+		Via:       via,
 		LocalPort: dbConnectLocal,
 	}
 	return dbProvider.Connect(ctx, args[0], opts)

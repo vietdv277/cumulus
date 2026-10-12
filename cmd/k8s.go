@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
-	"github.com/vietdv277/cumulus/internal/config"
 	gcpinternal "github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/kubeconfig"
 	"github.com/vietdv277/cumulus/internal/ui"
@@ -112,28 +111,9 @@ func init() {
 }
 
 func getK8sProvider(ctx context.Context) (provider.K8sProvider, error) {
-	var ctxConfig *config.Context
-	var ctxName string
-	var err error
-
-	if k8sContextFlag != "" {
-		cfg, loadErr := config.LoadCMLConfig()
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		ctxConfig = cfg.Contexts[k8sContextFlag]
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("context %q not found", k8sContextFlag)
-		}
-		ctxName = k8sContextFlag
-	} else {
-		ctxConfig, ctxName, err = config.GetCurrentContext()
-		if err != nil {
-			return nil, err
-		}
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("no context set. Use 'cml use <context>' to set one")
-		}
+	ctxConfig, ctxName, err := resolveContext(k8sContextFlag)
+	if err != nil {
+		return nil, err
 	}
 
 	switch ctxConfig.Provider {
@@ -274,34 +254,10 @@ func runK8sContexts(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// resolveContextForK8s returns the context config and name used by the k8s commands,
-// respecting --context when set and falling back to the current context otherwise.
-func resolveContextForK8s() (*config.Context, string, error) {
-	if k8sContextFlag != "" {
-		cfg, err := config.LoadCMLConfig()
-		if err != nil {
-			return nil, "", err
-		}
-		ctxConfig := cfg.Contexts[k8sContextFlag]
-		if ctxConfig == nil {
-			return nil, "", fmt.Errorf("context %q not found", k8sContextFlag)
-		}
-		return ctxConfig, k8sContextFlag, nil
-	}
-	ctxConfig, ctxName, err := config.GetCurrentContext()
-	if err != nil {
-		return nil, "", err
-	}
-	if ctxConfig == nil {
-		return nil, "", fmt.Errorf("no context set. Use 'cml use <context>' to set one")
-	}
-	return ctxConfig, ctxName, nil
-}
-
 func runK8sConnect(cmd *cobra.Command, args []string) error {
 	cluster := args[0]
 
-	ctxConfig, ctxName, err := resolveContextForK8s()
+	ctxConfig, ctxName, err := resolveContext(k8sContextFlag)
 	if err != nil {
 		return err
 	}

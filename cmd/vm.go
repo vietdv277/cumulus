@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
-	"github.com/vietdv277/cumulus/internal/config"
 	gcpinternal "github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
@@ -153,31 +152,9 @@ func init() {
 
 // getVMProvider returns the VM provider for the current or specified context
 func getVMProvider(ctx context.Context) (provider.VMProvider, error) {
-	// Get context (from flag or current)
-	var ctxConfig *config.Context
-	var ctxName string
-	var err error
-
-	if vmContextFlag != "" {
-		// Use specified context
-		cfg, loadErr := config.LoadCMLConfig()
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		ctxConfig = cfg.Contexts[vmContextFlag]
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("context %q not found", vmContextFlag)
-		}
-		ctxName = vmContextFlag
-	} else {
-		// Use current context
-		ctxConfig, ctxName, err = config.GetCurrentContext()
-		if err != nil {
-			return nil, err
-		}
-		if ctxConfig == nil {
-			return nil, fmt.Errorf("no context set. Use 'cml use <context>' to set one")
-		}
+	ctxConfig, ctxName, err := resolveContext(vmContextFlag)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create provider based on context

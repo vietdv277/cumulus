@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -123,29 +125,33 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 	// Try to set the context
 	if err := config.SetCurrentContext(contextName); err != nil {
-		// If context doesn't exist, show helpful message
-		contexts, current, listErr := config.ListContexts()
-		if listErr != nil {
-			return err
-		}
+		if errors.Is(err, config.ErrContextNotFound) {
+			// If context doesn't exist, show helpful message
+			contexts, current, listErr := config.ListContexts()
+			if listErr != nil {
+				return err
+			}
 
-		fmt.Printf("Context %q not found.\n\n", contextName)
+			fmt.Fprintf(os.Stderr, "Context %q not found.\n\n", contextName)
 
-		if len(contexts) == 0 {
-			fmt.Println("No contexts configured. Add one with:")
-			fmt.Println("  cml use add aws:prod --profile <profile> --region <region>")
-			fmt.Println("  cml use add gcp:prod --project <project-id> --region <region>")
-		} else {
-			fmt.Println("Available contexts:")
-			for name := range contexts {
-				marker := "  "
-				if name == current {
-					marker = "* "
+			if len(contexts) == 0 {
+				fmt.Fprintln(os.Stderr, "No contexts configured. Add one with:")
+				fmt.Fprintln(os.Stderr, "  cml use add aws:prod --profile <profile> --region <region>")
+				fmt.Fprintln(os.Stderr, "  cml use add gcp:prod --project <project-id> --region <region>")
+			} else {
+				fmt.Fprintln(os.Stderr, "Available contexts:")
+				for name := range contexts {
+					marker := "  "
+					if name == current {
+						marker = "* "
+					}
+					fmt.Fprintf(os.Stderr, "  %s%s\n", marker, name)
 				}
-				fmt.Printf("  %s%s\n", marker, name)
 			}
 		}
-		return nil
+		// Return the error so the exit code is 1; a failed switch must not
+		// silently leave later commands running in the previous context.
+		return err
 	}
 
 	// Get the context details to show confirmation
@@ -176,7 +182,8 @@ func runUse(cmd *cobra.Command, args []string) error {
 }
 
 func runUseAdd(cmd *cobra.Command, args []string) error {
-	contextName := args[0]
+	// Normalize the provider part so "AWS:prod" is stored as "aws:prod"
+	contextName := normalizeContextName(args[0])
 
 	// Parse the context name to determine provider
 	provider, _ := config.ParseContextName(contextName)
@@ -236,7 +243,10 @@ func runUseAdd(cmd *cobra.Command, args []string) error {
 }
 
 func runUseUpdate(cmd *cobra.Command, args []string) error {
-	contextName := args[0]
+	contextName, err := config.ResolveAlias(args[0])
+	if err != nil {
+		return err
+	}
 
 	cfg, err := config.LoadCMLConfig()
 	if err != nil {
@@ -299,7 +309,10 @@ func runUseUpdate(cmd *cobra.Command, args []string) error {
 }
 
 func runUseDelete(cmd *cobra.Command, args []string) error {
-	contextName := args[0]
+	contextName, err := config.ResolveAlias(args[0])
+	if err != nil {
+		return err
+	}
 
 	if err := config.DeleteContext(contextName); err != nil {
 		return fmt.Errorf("failed to delete context: %w", err)
@@ -307,4 +320,14 @@ func runUseDelete(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Context deleted: %s\n", contextName)
 	return nil
+}
+
+// normalizeContextName lower-cases the provider part of "<provider>:<name>"
+// so "AWS:prod" is stored as "aws:prod" and matches later lookups.
+func normalizeContextName(name string) string {
+	provider, ctxName := config.ParseContextName(name)
+	if provider == "" {
+		return name
+	}
+	return strings.ToLower(provider) + ":" + ctxName
 }
