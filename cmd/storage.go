@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
+	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -21,20 +22,22 @@ var storageCmd = &cobra.Command{
 	Short:   "Manage object storage (S3 / GCS)",
 	Long: `Manage object storage within the current context.
 
-Paths use the s3://bucket/key syntax. Local paths are anything else.
+Paths use s3://bucket/key on AWS contexts and gs://bucket/key on GCP contexts.
+Local paths are anything else.
 
 Examples:
   cml storage ls                              # List buckets
-  cml storage ls s3://my-bucket               # List objects in bucket
-  cml storage ls s3://my-bucket logs/         # List objects under prefix
+  cml storage ls s3://my-bucket               # List objects in bucket (AWS)
+  cml storage ls gs://my-bucket logs/         # List objects under prefix (GCP)
   cml storage cp file.txt s3://b/key.txt      # Upload
   cml storage cp s3://b/key.txt ./            # Download
+  cml storage cp s3://b/a gs://b/b            # Copy (one side must be remote)
   cml storage sync ./dir s3://b/dir --delete  # Sync directory
-  cml storage presign s3://b/key.txt          # Presigned GET URL`,
+  cml storage presign gs://b/key.txt          # Presigned GET URL`,
 }
 
 var storageLsCmd = &cobra.Command{
-	Use:     "ls [s3://bucket [prefix]]",
+	Use:     "ls [s3://bucket|gs://bucket [prefix]]",
 	Aliases: []string{"list"},
 	Short:   "List buckets, or objects under a bucket/prefix",
 	Args:    cobra.RangeArgs(0, 2),
@@ -43,20 +46,20 @@ var storageLsCmd = &cobra.Command{
 
 var storageCpCmd = &cobra.Command{
 	Use:   "cp <src> <dst>",
-	Short: "Copy a single object between local and S3",
+	Short: "Copy a single object between local and remote (s3/gs)",
 	Args:  cobra.ExactArgs(2),
 	RunE:  runStorageCp,
 }
 
 var storageSyncCmd = &cobra.Command{
 	Use:   "sync <src> <dst>",
-	Short: "Sync directories (delegates to aws s3 sync)",
+	Short: "Sync directories (delegates to aws s3 sync / gcloud storage rsync)",
 	Args:  cobra.ExactArgs(2),
 	RunE:  runStorageSync,
 }
 
 var storagePresignCmd = &cobra.Command{
-	Use:   "presign <s3://bucket/key>",
+	Use:   "presign <s3://bucket/key|gs://bucket/key>",
 	Short: "Generate a presigned GET URL",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runStoragePresign,
@@ -86,10 +89,10 @@ func init() {
 	storageCmd.PersistentFlags().StringVarP(&storageContextFlag, "context", "c", "", "Use specific context")
 }
 
-func getStorageProvider(ctx context.Context) (provider.StorageProvider, error) {
+func getStorageProvider(ctx context.Context) (provider.StorageProvider, string, error) {
 	ctxConfig, ctxName, err := resolveContext(storageContextFlag)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	switch ctxConfig.Provider {
@@ -99,16 +102,50 @@ func getStorageProvider(ctx context.Context) (provider.StorageProvider, error) {
 			aws.WithRegion(ctxConfig.Region),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create AWS client: %w", err)
+			return nil, "", fmt.Errorf("failed to create AWS client: %w", err)
 		}
-		return aws.NewStorageProvider(client, ctxConfig.Profile, ctxConfig.Region), nil
+		return aws.NewStorageProvider(client, ctxConfig.Profile, ctxConfig.Region), "aws", nil
 
 	case "gcp":
-		return nil, fmt.Errorf("storage commands are not yet implemented for GCP (context: %s)", ctxName)
+		client, err := gcp.NewClient(ctx,
+			gcp.WithProject(ctxConfig.Project),
+			gcp.WithRegion(ctxConfig.Region),
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to create GCP client: %w", err)
+		}
+		return gcp.NewStorageProvider(client), "gcp", nil
 
 	default:
-		return nil, fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
+		return nil, "", fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
 	}
+}
+
+// storageRemoteSchemes maps each provider to the URI scheme its storage
+// paths use.
+var storageRemoteSchemes = map[string]string{
+	"aws": "s3://",
+	"gcp": "gs://",
+}
+
+// storageScheme returns the path scheme for the context's provider
+// (s3:// unless the provider is gcp).
+func storageScheme(providerName string) string {
+	if s := storageRemoteSchemes[providerName]; s != "" {
+		return s
+	}
+	return "s3://"
+}
+
+// isRemoteSchemePath reports whether p starts with any storage scheme, to
+// detect a scheme/provider mismatch.
+func isRemoteSchemePath(p string) bool {
+	for _, scheme := range storageRemoteSchemes {
+		if strings.HasPrefix(p, scheme) {
+			return true
+		}
+	}
+	return false
 }
 
 func runStorageLs(cmd *cobra.Command, args []string) error {
@@ -118,10 +155,11 @@ func runStorageLs(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := context.Background()
-	sp, err := getStorageProvider(ctx)
+	sp, providerName, err := getStorageProvider(ctx)
 	if err != nil {
 		return err
 	}
+	scheme := storageScheme(providerName)
 
 	if len(args) == 0 {
 		buckets, err := sp.ListBuckets(ctx)
@@ -135,7 +173,7 @@ func runStorageLs(cmd *cobra.Command, args []string) error {
 		return render(os.Stdout, out, buckets, func() { printBucketTable(buckets) })
 	}
 
-	bucket, prefix, err := parseLsTarget(args)
+	bucket, prefix, err := parseLsTarget(args, scheme)
 	if err != nil {
 		return err
 	}
@@ -151,14 +189,14 @@ func runStorageLs(cmd *cobra.Command, args []string) error {
 	// The bucket header is info, not the document — keep stdout clean in
 	// json/yaml mode.
 	if out != OutputTable {
-		fmt.Fprintf(os.Stderr, "s3://%s\n", bucket)
+		fmt.Fprintf(os.Stderr, "%s%s\n", scheme, bucket)
 	}
-	return render(os.Stdout, out, objects, func() { printObjectTable(bucket, objects) })
+	return render(os.Stdout, out, objects, func() { printObjectTable(scheme+bucket, objects) })
 }
 
 func runStorageCp(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sp, err := getStorageProvider(ctx)
+	sp, _, err := getStorageProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -171,7 +209,7 @@ func runStorageCp(cmd *cobra.Command, args []string) error {
 
 func runStorageSync(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sp, err := getStorageProvider(ctx)
+	sp, _, err := getStorageProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -196,7 +234,7 @@ func runStorageSync(cmd *cobra.Command, args []string) error {
 
 func runStoragePresign(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sp, err := getStorageProvider(ctx)
+	sp, _, err := getStorageProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -208,14 +246,19 @@ func runStoragePresign(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// parseLsTarget accepts forms: ["s3://bucket"], ["s3://bucket/prefix"],
-// or ["s3://bucket", "prefix"] and returns (bucket, prefix).
-func parseLsTarget(args []string) (string, string, error) {
+// parseLsTarget accepts forms: ["<scheme://bucket>"],
+// ["<scheme://bucket/prefix>"], or ["<scheme://bucket>", "prefix"] and returns
+// (bucket, prefix). A path under a different remote scheme is a mismatch and
+// errors naming the expected scheme.
+func parseLsTarget(args []string, scheme string) (string, string, error) {
 	first := args[0]
-	if !strings.HasPrefix(first, "s3://") {
-		return "", "", fmt.Errorf("bucket must be an s3:// URI, got %q", first)
+	if !strings.HasPrefix(first, scheme) {
+		if isRemoteSchemePath(first) {
+			return "", "", fmt.Errorf("this context uses %s paths, got %q", scheme, first)
+		}
+		return "", "", fmt.Errorf("bucket must be a %s URI, got %q", scheme, first)
 	}
-	rest := strings.TrimPrefix(first, "s3://")
+	rest := strings.TrimPrefix(first, scheme)
 	parts := strings.SplitN(rest, "/", 2)
 	bucket := parts[0]
 	prefix := ""
@@ -223,7 +266,7 @@ func parseLsTarget(args []string) (string, string, error) {
 		prefix = parts[1]
 	}
 	if bucket == "" {
-		return "", "", fmt.Errorf("invalid s3 URI: %s", first)
+		return "", "", fmt.Errorf("invalid %s URI: %s", scheme, first)
 	}
 	if len(args) == 2 {
 		if prefix != "" {
@@ -249,7 +292,7 @@ func printBucketTable(buckets []types.Bucket) {
 	fmt.Printf("  %d buckets\n", len(buckets))
 }
 
-func printObjectTable(bucket string, objects []types.Object) {
+func printObjectTable(bucketURI string, objects []types.Object) {
 	headers := []string{"Key", "Size", "Last Modified", "Storage Class"}
 	widths := []int{60, 12, 20, 14}
 	rows := make([][]string, 0, len(objects))
@@ -264,7 +307,7 @@ func printObjectTable(bucket string, objects []types.Object) {
 		}
 		rows = append(rows, []string{o.Key, humanSize(o.Size), modified, class})
 	}
-	fmt.Printf("  s3://%s\n", bucket)
+	fmt.Printf("  %s\n", bucketURI)
 	renderSimpleTable(headers, widths, rows)
 	fmt.Printf("  %d objects\n", len(objects))
 }

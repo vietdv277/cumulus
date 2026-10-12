@@ -242,11 +242,11 @@ cml
 │   ├── list               # List databases (--engine filter)
 │   ├── get <name>         # Details
 │   └── connect <name>     # AWS: port-forward via bastion (--via <instance-id>); GCP: cloud-sql-proxy
-├── storage (s3)           # Object storage (S3; GCS not implemented); paths use s3://bucket/key
-│   ├── ls [s3://b [pfx]]  # List buckets, or objects under prefix
-│   ├── cp <src> <dst>     # Copy one object (local ↔ remote, s3 → s3; ≤ 5 GiB)
-│   ├── sync <src> <dst>   # Sync directory (--delete confirms; --yes)
-│   └── presign <s3://...> # Presigned GET URL (expiry ≤ 7 days)
+├── storage (s3)           # Object storage: s3://bucket/key on AWS, gs://bucket/key on GCP
+│   ├── ls [uri [pfx]]     # List buckets, or objects under prefix
+│   ├── cp <src> <dst>     # Copy one object (local ↔ remote, remote → remote; ≤ 5 GiB on S3)
+│   ├── sync <src> <dst>   # Sync directory (aws s3 sync / gcloud storage rsync; --delete confirms; --yes)
+│   └── presign <uri>      # Presigned GET URL (V4 on GCS, needs service-account credentials; expiry ≤ 7 days)
 ├── k8s                    # Kubernetes cluster management
 │   ├── list               # List EKS / GKE clusters in context
 │   ├── get <name>         # Cluster details
