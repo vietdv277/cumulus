@@ -377,21 +377,28 @@ supported on GCP.
 
 ## Object storage
 
-Unified `s3://bucket/key` addressing for S3 and GCS.
+Unified addressing: `s3://bucket/key` on AWS contexts, `gs://bucket/key` on GCP
+contexts. A path using the other scheme is an error naming the expected one.
 
 ```bash
 cml storage ls                                 # list buckets
-cml storage ls s3://my-bucket                  # list objects
-cml storage ls s3://my-bucket logs/            # list with prefix
+cml storage ls s3://my-bucket                  # list objects (AWS context)
+cml storage ls gs://my-bucket logs/            # list with prefix (GCP context)
 
 cml storage cp file.txt s3://my-bucket/key     # upload
 cml storage cp s3://my-bucket/key ./           # download
+cml storage cp gs://src-b/key gs://dst-b/key   # server-side copy (GCP)
 
-cml storage sync ./dir s3://my-bucket/dir --delete
-cml storage presign s3://my-bucket/key         # presigned GET URL
+cml storage sync ./dir s3://my-bucket/dir --delete   # delegates to aws s3 sync
+cml storage sync ./dir gs://my-bucket/dir --delete   # delegates to gcloud storage rsync
+cml storage presign gs://my-bucket/key         # presigned GET URL
 ```
 
 `sync --delete` asks for confirmation before deleting destination objects; pass `--yes` to skip the prompt.
+
+`presign` returns a V4 signed GET URL, valid for 1 s to 7 days (`--expires`,
+default 3600). It signs locally and therefore needs service-account
+credentials (key file or impersonation); `gcloud` user credentials cannot sign.
 
 ## Kubernetes
 
