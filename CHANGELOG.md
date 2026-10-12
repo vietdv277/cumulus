@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-10-12
+
 ### Fixed
 - Saving the config tightens an existing group/world-accessible config
   directory to 0700, so the `cml doctor` permissions hint now clears the failure.
@@ -161,7 +163,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Auto Scaling Group commands: `cml asg ls/describe/instances/scale`.
 
-[Unreleased]: https://github.com/vietdv277/cumulus/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/vietdv277/cumulus/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/vietdv277/cumulus/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/vietdv277/cumulus/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/vietdv277/cumulus/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/vietdv277/cumulus/compare/v0.9.0...v0.9.1
