@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
+	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -98,7 +99,14 @@ func getDBProvider(ctx context.Context) (provider.DBProvider, error) {
 		return aws.NewDBProvider(client, ctxConfig.Profile, ctxConfig.Region), nil
 
 	case "gcp":
-		return nil, fmt.Errorf("db commands are not yet implemented for GCP (context: %s)", ctxName)
+		client, err := gcp.NewClient(ctx,
+			gcp.WithProject(ctxConfig.Project),
+			gcp.WithRegion(ctxConfig.Region),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GCP client: %w", err)
+		}
+		return gcp.NewDBProvider(client), nil
 
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
@@ -159,15 +167,24 @@ func runDBConnect(cmd *cobra.Command, args []string) error {
 	}
 
 	via := dbConnectVia
-	if via == "" {
-		// Fall back to the context's bastion, like k8s connect does
-		ctxConfig, _, ctxErr := resolveContext(dbContextFlag)
-		if ctxErr == nil {
-			via = ctxConfig.Bastion
+	if _, isGCP := dbProvider.(*gcp.GCPDBProvider); isGCP {
+		// cloud-sql-proxy connects to the instance directly: a bastion is
+		// never involved, so --via has no meaning on GCP.
+		if via != "" {
+			return fmt.Errorf("--via is not supported for GCP: cloud-sql-proxy connects to the instance directly")
 		}
-	}
-	if via == "" {
-		return fmt.Errorf("no bastion for db connect — pass --via <bastion-instance-id> or set one with 'cml use update <context> --bastion i-xxxxxx'")
+		via = ""
+	} else {
+		if via == "" {
+			// Fall back to the context's bastion, like k8s connect does
+			ctxConfig, _, ctxErr := resolveContext(dbContextFlag)
+			if ctxErr == nil {
+				via = ctxConfig.Bastion
+			}
+		}
+		if via == "" {
+			return fmt.Errorf("no bastion for db connect — pass --via <bastion-instance-id> or set one with 'cml use update <context> --bastion i-xxxxxx'")
+		}
 	}
 
 	opts := &provider.DBConnectOptions{
