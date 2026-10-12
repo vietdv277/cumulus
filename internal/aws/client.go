@@ -11,6 +11,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
@@ -43,6 +44,9 @@ type Client struct {
 
 	eksOnce   sync.Once
 	eksClient *eks.Client
+
+	cwLogsOnce   sync.Once
+	cwLogsClient *cloudwatchlogs.Client
 }
 
 // ClientOption allows customizing the AWS Client
@@ -126,6 +130,12 @@ func (c *Client) S3() *s3.Client {
 func (c *Client) EKS() *eks.Client {
 	c.eksOnce.Do(func() { c.eksClient = eks.NewFromConfig(c.cfg) })
 	return c.eksClient
+}
+
+// CloudWatchLogs returns the lazily-constructed CloudWatch Logs client.
+func (c *Client) CloudWatchLogs() *cloudwatchlogs.Client {
+	c.cwLogsOnce.Do(func() { c.cwLogsClient = cloudwatchlogs.NewFromConfig(c.cfg) })
+	return c.cwLogsClient
 }
 
 // Config returns the underlying AWS config
