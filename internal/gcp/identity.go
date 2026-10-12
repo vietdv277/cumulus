@@ -26,9 +26,7 @@ type CallerIdentity struct {
 
 // GetCallerIdentity verifies GCP Application Default Credentials and returns
 // the resolved identity. Mirrors the aws.GetCallerIdentity pattern.
-func GetCallerIdentity(project, region string) (*CallerIdentity, error) {
-	ctx := context.Background()
-
+func GetCallerIdentity(ctx context.Context, project, region string) (*CallerIdentity, error) {
 	creds, err := google.FindDefaultCredentials(ctx, scopeCloudPlatform)
 	if err != nil {
 		return nil, fmt.Errorf(

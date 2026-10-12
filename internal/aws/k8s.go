@@ -75,7 +75,10 @@ func (p *AWSK8sProvider) ListClusters(ctx context.Context) ([]types.K8sCluster, 
 func (p *AWSK8sProvider) GetCluster(ctx context.Context, nameOrID string) (*types.K8sCluster, error) {
 	out, err := p.client.EKS().DescribeCluster(ctx, &eks.DescribeClusterInput{Name: strPtr(nameOrID)})
 	if err != nil {
-		return nil, fmt.Errorf("cluster not found: %s", nameOrID)
+		if isNotFoundErr(err, "ResourceNotFoundException") {
+			return nil, fmt.Errorf("cluster not found: %s", nameOrID)
+		}
+		return nil, fmt.Errorf("failed to describe cluster %s: %w", nameOrID, err)
 	}
 	if out.Cluster == nil {
 		return nil, fmt.Errorf("cluster not found: %s", nameOrID)

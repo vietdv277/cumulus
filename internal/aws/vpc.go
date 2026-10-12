@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -10,14 +12,16 @@ import (
 
 // ListVPCs returns all VPCs
 func (c *Client) ListVPCs() ([]pkgtypes.VPC, error) {
-	output, err := c.EC2().DescribeVpcs(c.ctx, &ec2.DescribeVpcsInput{})
-	if err != nil {
-		return nil, err
-	}
-
 	var vpcs []pkgtypes.VPC
-	for _, v := range output.Vpcs {
-		vpcs = append(vpcs, toVPC(v))
+	paginator := ec2.NewDescribeVpcsPaginator(c.EC2(), &ec2.DescribeVpcsInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(c.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe VPCs: %w", err)
+		}
+		for _, v := range page.Vpcs {
+			vpcs = append(vpcs, toVPC(v))
+		}
 	}
 
 	return vpcs, nil
@@ -29,7 +33,7 @@ func (c *Client) DescribeVPC(vpcID string) (*pkgtypes.VPC, error) {
 		VpcIds: []string{vpcID},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to describe VPC %s: %w", vpcID, err)
 	}
 
 	if len(output.Vpcs) == 0 {
@@ -53,14 +57,16 @@ func (c *Client) ListSubnets(vpcID string) ([]pkgtypes.Subnet, error) {
 		}
 	}
 
-	output, err := c.EC2().DescribeSubnets(c.ctx, input)
-	if err != nil {
-		return nil, err
-	}
-
 	var subnets []pkgtypes.Subnet
-	for _, s := range output.Subnets {
-		subnets = append(subnets, toSubnet(s))
+	paginator := ec2.NewDescribeSubnetsPaginator(c.EC2(), input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(c.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe subnets: %w", err)
+		}
+		for _, s := range page.Subnets {
+			subnets = append(subnets, toSubnet(s))
+		}
 	}
 
 	return subnets, nil

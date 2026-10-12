@@ -76,8 +76,9 @@ kubectl run inside the subshell reaches a private EKS API through the bastion.
 Exiting the subshell tears the tunnel down.
 
 Requires the active AWS context to have a 'bastion' field set (EC2 instance ID).
-The remote port defaults to 8888 and can be overridden via 'bastion_port' on the
-context or --local-port on the command.
+The remote port defaults to 8888 and can be set via 'bastion_port' on the
+context. The local port defaults to the remote port and can be overridden via
+--local-port.
 
 Examples:
   cml k8s connect prod-cluster
@@ -106,7 +107,7 @@ func init() {
 	k8sListCmd.Flags().BoolVarP(&k8sListInteractive, "interactive", "i", false, "Interactive selection mode")
 
 	k8sConnectCmd.Flags().StringVar(&k8sConnectBastion, "bastion", "", "Override context bastion instance ID")
-	k8sConnectCmd.Flags().IntVar(&k8sConnectLocalPort, "local-port", 0, "Local port for HTTPS_PROXY (default: bastion_port or 8888)")
+	k8sConnectCmd.Flags().IntVar(&k8sConnectLocalPort, "local-port", 0, "Local port for HTTPS_PROXY (default: same as the remote port)")
 
 	k8sCmd.PersistentFlags().StringVarP(&k8sContextFlag, "context", "c", "", "Use specific context")
 }
@@ -340,26 +341,36 @@ func runK8sConnect(cmd *cobra.Command, args []string) error {
 	vmProvider := aws.NewVMProvider(client, ctxConfig.Profile, ctxConfig.Region)
 
 	fmt.Fprintf(os.Stderr, "→ Starting SSM tunnel to %s:%d (local :%d)\n", bastion, remotePort, localPort)
+	if err := ensureTunnelPortFree(localPort); err != nil {
+		return err
+	}
 	tunnelCmd, err := vmProvider.StartPortForward(ctx, bastion, remotePort, localPort)
 	if err != nil {
 		return err
 	}
+
+	// Single Wait watcher: waitForPort consumes early exits from the same
+	// channel the deferred teardown reaps from.
+	waitDone := make(chan error, 1)
+	tunnelExit := make(chan struct{})
+	go func() {
+		waitDone <- tunnelCmd.Wait()
+		close(tunnelExit)
+	}()
 	defer func() {
-		if tunnelCmd.Process != nil {
-			_ = tunnelCmd.Process.Signal(syscall.SIGTERM)
-			// Small grace period, then force kill.
-			done := make(chan struct{})
-			go func() { _ = tunnelCmd.Wait(); close(done) }()
-			select {
-			case <-done:
-			case <-time.After(2 * time.Second):
-				_ = tunnelCmd.Process.Kill()
-				<-done
-			}
+		if tunnelCmd.Process == nil {
+			return
+		}
+		_ = aws.TerminateTunnel(tunnelCmd)
+		select {
+		case <-tunnelExit:
+		case <-time.After(2 * time.Second):
+			_ = aws.KillTunnel(tunnelCmd)
+			<-tunnelExit
 		}
 	}()
 
-	if err := waitForPort(ctx, localPort, 10*time.Second); err != nil {
+	if err := waitForPort(ctx, localPort, 10*time.Second, tunnelExit); err != nil {
 		return fmt.Errorf("tunnel did not become ready: %w", err)
 	}
 
@@ -385,16 +396,21 @@ func runK8sConnect(cmd *cobra.Command, args []string) error {
 	sub.Stdout = os.Stdout
 	sub.Stderr = os.Stderr
 
-	// Forward SIGINT to the subshell rather than letting it kill us directly;
-	// we want to clean up the tunnel in the deferred handler either way.
+	// Forward SIGINT/SIGTERM to the subshell rather than letting them kill us
+	// directly; we want to clean up the tunnel in the deferred handler either
+	// way. Interactive shells ignore SIGTERM, so TERM is forwarded as SIGHUP.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 	go func() {
 		for sig := range sigCh {
-			if sub.Process != nil {
-				_ = sub.Process.Signal(sig)
+			if sub.Process == nil {
+				continue
 			}
+			if sig == syscall.SIGTERM {
+				sig = syscall.SIGHUP
+			}
+			_ = sub.Process.Signal(sig)
 		}
 	}()
 
@@ -410,13 +426,18 @@ func runK8sConnect(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// waitForPort polls 127.0.0.1:<port> until a TCP connection succeeds or the timeout expires.
-func waitForPort(ctx context.Context, port int, timeout time.Duration) error {
+// waitForPort polls 127.0.0.1:<port> until a TCP connection succeeds, the
+// tunnel process exits early, or the timeout expires.
+func waitForPort(ctx context.Context, port int, timeout time.Duration, tunnelExit <-chan struct{}) error {
 	deadline := time.Now().Add(timeout)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	for {
-		if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
 			return ctx.Err()
+		case <-tunnelExit:
+			return fmt.Errorf("tunnel process exited before %s became ready", addr)
+		default:
 		}
 		conn, err := net.DialTimeout("tcp", addr, 300*time.Millisecond)
 		if err == nil {
@@ -428,6 +449,17 @@ func waitForPort(ctx context.Context, port int, timeout time.Duration) error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// ensureTunnelPortFree fails when something already listens on the local port,
+// otherwise a new tunnel would silently route traffic to the wrong backend.
+func ensureTunnelPortFree(port int) error {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return fmt.Errorf("local port %d already in use; pass --local-port to pick another", port)
+	}
+	_ = ln.Close()
+	return nil
 }
 
 func printK8sTable(clusters []types.K8sCluster) {

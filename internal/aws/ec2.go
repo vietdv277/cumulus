@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -37,7 +39,7 @@ func (c *Client) ListInstances(input *ListInstanceInput) ([]pkgtypes.Instance, e
 
 	if input.NamePattern != "" {
 		filters = append(filters, ec2types.Filter{
-			Name:   aws.String("tag:name"),
+			Name:   aws.String("tag:Name"),
 			Values: []string{"*" + input.NamePattern + "*"},
 		})
 	}
@@ -59,16 +61,17 @@ func (c *Client) ListInstances(input *ListInstanceInput) ([]pkgtypes.Instance, e
 	}
 
 	// Call AWS API
-	output, err := c.EC2().DescribeInstances(c.ctx, describeInput)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to internal Instance type
 	var instances []pkgtypes.Instance
-	for _, reservation := range output.Reservations {
-		for _, inst := range reservation.Instances {
-			instances = append(instances, toInstance(inst))
+	paginator := ec2.NewDescribeInstancesPaginator(c.EC2(), describeInput)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(c.ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe instances: %w", err)
+		}
+		for _, reservation := range page.Reservations {
+			for _, inst := range reservation.Instances {
+				instances = append(instances, toInstance(inst))
+			}
 		}
 	}
 
@@ -79,7 +82,7 @@ func (c *Client) ListInstances(input *ListInstanceInput) ([]pkgtypes.Instance, e
 func toInstance(i ec2types.Instance) pkgtypes.Instance {
 	inst := pkgtypes.Instance{
 		ID:    deref(i.InstanceId),
-		State: string(i.State.Name),
+		State: string(instanceStateName(i)),
 		Type:  string(i.InstanceType),
 		Cloud: "aws",
 	}

@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -15,9 +16,7 @@ type CallerIdentity struct {
 }
 
 // GetCallerIdentity returns the current AWS caller identity
-func GetCallerIdentity(profile, region string) (*CallerIdentity, error) {
-	ctx := context.Background()
-
+func GetCallerIdentity(ctx context.Context, profile, region string) (*CallerIdentity, error) {
 	var configOpts []func(*config.LoadOptions) error
 
 	if profile != "" {
@@ -30,14 +29,14 @@ func GetCallerIdentity(profile, region string) (*CallerIdentity, error) {
 
 	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load AWS SDK config: %w", err)
 	}
 
 	stsClient := sts.NewFromConfig(cfg)
 
 	output, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get caller identity: %w", err)
 	}
 
 	return &CallerIdentity{

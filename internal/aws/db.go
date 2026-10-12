@@ -64,7 +64,10 @@ func (p *AWSDBProvider) Get(ctx context.Context, nameOrID string) (*types.Databa
 		DBInstanceIdentifier: strPtr(nameOrID),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("DB instance not found: %s", nameOrID)
+		if isNotFoundErr(err, "DBInstanceNotFound") {
+			return nil, fmt.Errorf("DB instance not found: %s", nameOrID)
+		}
+		return nil, fmt.Errorf("failed to get DB instance %s: %w", nameOrID, err)
 	}
 	if len(output.DBInstances) == 0 {
 		return nil, fmt.Errorf("DB instance not found: %s", nameOrID)
@@ -119,7 +122,7 @@ func (p *AWSDBProvider) Connect(ctx context.Context, nameOrID string, opts *prov
 	fmt.Printf("Tunneling %s -> localhost:%d via %s\n", db.Endpoint, localPort, opts.Via)
 	fmt.Println("Press Ctrl+C to close the tunnel")
 
-	ssmCmd := exec.Command("aws", args...)
+	ssmCmd := exec.CommandContext(ctx, "aws", args...)
 	ssmCmd.Stdin = os.Stdin
 	ssmCmd.Stdout = os.Stdout
 	ssmCmd.Stderr = os.Stderr
