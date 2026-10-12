@@ -183,6 +183,22 @@ aliases:                # short names → full context names
   gcp: gcp:prod
 ```
 
+## Output formats
+
+Data-printing commands accept a global `--output table|json|yaml` flag (`-o`): `vm list/get`,
+`secrets list/get`, `db list/get`, `storage ls`, `k8s list/get/contexts`, `contexts`, `status`, `version`,
+`aws iam whoami`, `aws ssm param list/get`, and the legacy `ec2 ls`, `asg`, `lb`, `vpc` listings.
+The default is `table`; `defaults.output` in the config file overrides it, and the flag overrides the config.
+
+```bash
+cml vm list -o json              # machine-readable JSON (2-space indent)
+cml db list -o yaml              # machine-readable YAML
+cml vm list -o json | jq '.[].name'
+```
+
+With `json`/`yaml`, stdout carries only the document — progress, hints and table headers are sent to stderr —
+and empty results print `[]`. `--interactive/-i` cannot be combined with `--output json/yaml`.
+
 ## VM commands
 
 All `vm` subcommands operate in the current context. Pass `--context <name-or-alias>` to target a different one without switching.

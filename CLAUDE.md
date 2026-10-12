@@ -110,10 +110,10 @@ tunnels:                           # saved tunnel configs — reserved, not yet 
     target: i-0abc123
     remote_port: 5432
     local_port: 5432
-defaults:                          # reserved, not yet read by commands
-  output: table                    # table | json | yaml
-  interactive: false
-  region_fallback: us-east-1
+defaults:
+  output: table                    # table | json | yaml — read by the global --output flag (flag wins)
+  interactive: false               # reserved, not yet read by commands
+  region_fallback: us-east-1       # reserved, not yet read by commands
 ```
 
 Use `ParseContextName("aws:prod")` → `{provider: "aws", name: "prod"}`.
@@ -284,6 +284,8 @@ cml
   linux/darwin/windows, so `GOOS=windows go build ./...` must pass
 - Interactive selectors return `selection cancelled` on Esc/q/Ctrl-C (exit 0); any other
   selector error is returned
+- Data-printing commands route through `render` (`cmd/output.go` → `internal/output`); with
+  json/yaml, stdout carries only the document and empty results print `[]`
 
 ## UI Patterns
 
