@@ -6,7 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-12
+
 ### Added
+- `cml logs <target>` (alias `cml log`): query or tail (`-f`) logs with
+  `--since`, `--filter` and `--limit`; `cml logs list [prefix]` lists targets.
+  AWS reads CloudWatch log groups, GCP reads Cloud Logging log names. With
+  `--follow`, `-o json` prints one JSON object per line.
 - Global `-o/--output table|json|yaml` on every data-printing command; honours
   `defaults.output`. With json/yaml stdout carries only the document and empty
   results print `[]`.
@@ -145,7 +151,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Auto Scaling Group commands: `cml asg ls/describe/instances/scale`.
 
-[Unreleased]: https://github.com/vietdv277/cumulus/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/vietdv277/cumulus/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/vietdv277/cumulus/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/vietdv277/cumulus/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/vietdv277/cumulus/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/vietdv277/cumulus/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/vietdv277/cumulus/compare/v0.7.0...v0.8.0
