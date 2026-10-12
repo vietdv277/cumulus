@@ -526,8 +526,45 @@ SecretValue
 - [x] `doctor` command
 - [x] Saved tunnels (`vm tunnel --save`, `cml tunnel list/start/rm`)
 - [x] `--context` on `cml aws ssm/iam`
-- [ ] Error handling improvements
-- [ ] Documentation
+
+#### Next release — v0.11.1 (findings from the v0.11.0 install check)
+
+- [ ] Tighten an existing config directory to 0700 on save; `os.MkdirAll` leaves a pre-existing 0755
+  `~/.config/cml` as is, so the `cml doctor` permissions hint never clears the failure
+- [ ] Stop printing usage text on runtime errors (a failed `cml doctor` prints it today); keep it for
+  flag and argument errors
+- [ ] Strip release binaries with `-s -w` in `release.yml`, matching `make build`
+
+#### Error handling — v0.12.0
+
+- [ ] Auth failures: detect an expired SSO session or missing ADC on every command and print the fix
+  (`aws sso login --profile <p>`, `gcloud auth application-default login`); only `status` and
+  `doctor` do this today
+- [ ] Not found: suggest close matches for contexts, aliases, saved tunnels and VM names
+- [ ] Permission denied: name the denied action from the API error
+- [ ] Network errors: document the SDK retry defaults (AWS standard retryer, GCP API clients) instead
+  of adding a second retry layer
+
+#### Documentation — v0.12.0
+
+- [ ] Align this document with the code: Project Structure (no `internal/provider/`, `pkg/models/`
+  or `cmd/gcp/`), Dependencies (`google.golang.org/api`, not a planned `cloud.google.com/go`),
+  Command Reference flags (`storage presign --expires` in seconds, `logs --limit`, `logs list`,
+  `--yes`)
+- [ ] Move unbuilt spec items out of the reference sections into the backlog below
+- [ ] `defaults.interactive` and `defaults.region_fallback`: wire them into commands or drop them
+  from the config schema
+- [ ] Verify GCP parity against a real project (secrets, `db list/connect`, `gs://` storage and
+  presign, logs) and record the results
+
+### Backlog — unscheduled
+
+- `--output wide`
+- `secrets get --decode/--copy` (only `aws ssm param get --decode` exists)
+- `cml aws sts assume-role`
+- `cml gcp projects list/use`, `cml gcp iap tunnel`, `cml gcp iam test-permissions`
+- `db:nosql` (DynamoDB / Firestore), `functions` (Lambda / Cloud Functions), `dns` (Route53 / Cloud DNS)
+- Retire the legacy layer (`ec2`, `profile`, `asg`, `lb`, `vpc`) in favour of the context-aware commands
 
 ---
 
