@@ -8,12 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmTypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/spf13/cobra"
 
-	internalConfig "github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/output"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
@@ -90,32 +88,17 @@ func init() {
 	ssmParamSetCmd.Flags().BoolVar(&ssmParamSecure, "secure", false, "Create as SecureString")
 }
 
-func getSSMClient() (*ssm.Client, error) {
+func getSSMClient(cmd *cobra.Command) (*ssm.Client, error) {
 	ctx := context.Background()
 
-	// Get current context
-	ctxConfig, _, err := internalConfig.GetCurrentContext()
+	ctxConfig, _, err := resolveAWSContext(cmd)
 	if err != nil {
 		return nil, err
 	}
 
-	if ctxConfig == nil || ctxConfig.Provider != "aws" {
-		return nil, fmt.Errorf("current context is not AWS. Use 'cml use aws:<context>'")
-	}
-
-	var configOpts []func(*config.LoadOptions) error
-
-	if ctxConfig.Profile != "" {
-		configOpts = append(configOpts, config.WithSharedConfigProfile(ctxConfig.Profile))
-	}
-
-	if ctxConfig.Region != "" {
-		configOpts = append(configOpts, config.WithRegion(ctxConfig.Region))
-	}
-
-	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
+	cfg, err := loadAWSConfig(ctx, ctxConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, err
 	}
 
 	return ssm.NewFromConfig(cfg), nil
@@ -129,7 +112,7 @@ func runSSMParamList(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	client, err := getSSMClient()
+	client, err := getSSMClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -190,7 +173,7 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	client, err := getSSMClient()
+	client, err := getSSMClient(cmd)
 	if err != nil {
 		return err
 	}
@@ -227,7 +210,7 @@ func runSSMParamGet(cmd *cobra.Command, args []string) error {
 func runSSMParamSet(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	client, err := getSSMClient()
+	client, err := getSSMClient(cmd)
 	if err != nil {
 		return err
 	}

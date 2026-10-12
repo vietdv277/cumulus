@@ -241,7 +241,7 @@ The exit code is 1 when any check fails — warnings do not fail.
 
 Data-printing commands accept a global `--output table|json|yaml` flag (`-o`): `vm list/get`,
 `secrets list/get`, `db list/get`, `storage ls`, `k8s list/get/contexts`, `contexts`, `status`, `version`,
-`aws iam whoami`, `aws ssm param list/get`, and the legacy `ec2 ls`, `asg`, `lb`, `vpc` listings.
+`aws iam whoami`, `aws ssm param list/get`, `tunnel list`, and the legacy `ec2 ls`, `asg`, `lb`, `vpc` listings.
 The default is `table`; `defaults.output` in the config file overrides it, and the flag overrides the config.
 
 ```bash
@@ -275,6 +275,7 @@ cml vm connect web-01
 # Port forwarding
 cml vm tunnel db-01 5432            # forward local 5432 → remote 5432
 cml vm tunnel db-01 5432 15432      # forward local 15432 → remote 5432
+cml vm tunnel db-01 5432 --save db-prod   # also save the tunnel for 'cml tunnel start'
 
 # Lifecycle
 cml vm start  web-01
@@ -298,6 +299,26 @@ cml use update gcp:prod \
 cml vm connect my-private-instance  # → gcloud ssh to bastion, then ssh <private-ip>
 cml vm tunnel  my-private-instance 5432  # → SSH tunnel via bastion
 ```
+
+## Saved tunnels
+
+`cml vm tunnel --save <name>` stores the tunnel under `tunnels:` in the config file and starts it
+as usual. `cml tunnel` manages the saved entries; starting one always uses the context it was
+saved with — not the current context.
+
+```bash
+cml vm tunnel db-01 5432 --save db-prod      # save and start the tunnel
+cml vm tunnel db-01 5432 --save db-prod --force   # overwrite an existing save
+
+cml tunnel list                              # list saved tunnels (supports --output json/yaml)
+cml tunnel start db-prod                     # start it again, using its saved context
+cml tunnel start db-prod --local-port 25432  # override the local port
+cml tunnel rm db-prod                        # remove a saved tunnel
+```
+
+Tunnel names are lowercase letters, digits and `-` (no leading dash). Saving over an existing
+name needs `--force`. Saved entries that forward via a bastion or remote host (`bastion:` /
+`remote_host:` fields) are not supported yet.
 
 ## Secrets
 
@@ -411,6 +432,10 @@ cml aws ssm param set  /my/param value
 # IAM identity
 cml aws iam whoami
 ```
+
+Both commands accept `-c/--context <name-or-alias>` to operate in a specific
+context instead of the current one. `-p/--profile` and `-r/--region` are not
+supported here — pass them to the context instead (`cml use update …`).
 
 ## Legacy commands
 

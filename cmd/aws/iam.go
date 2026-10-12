@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/spf13/cobra"
 
-	internalConfig "github.com/vietdv277/cumulus/internal/config"
 	"github.com/vietdv277/cumulus/internal/output"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
@@ -56,29 +54,15 @@ func runIAMWhoami(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	// Get current context
-	ctxConfig, ctxName, err := internalConfig.GetCurrentContext()
+	// Get the resolved context (flag wins over current; legacy flags rejected)
+	ctxConfig, ctxName, err := resolveAWSContext(cmd)
 	if err != nil {
 		return err
 	}
 
-	if ctxConfig == nil || ctxConfig.Provider != "aws" {
-		return fmt.Errorf("current context is not AWS. Use 'cml use aws:<context>'")
-	}
-
-	var configOpts []func(*config.LoadOptions) error
-
-	if ctxConfig.Profile != "" {
-		configOpts = append(configOpts, config.WithSharedConfigProfile(ctxConfig.Profile))
-	}
-
-	if ctxConfig.Region != "" {
-		configOpts = append(configOpts, config.WithRegion(ctxConfig.Region))
-	}
-
-	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
+	cfg, err := loadAWSConfig(ctx, ctxConfig)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return err
 	}
 
 	stsClient := sts.NewFromConfig(cfg)
