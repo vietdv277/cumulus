@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
@@ -44,6 +46,7 @@ var secretsListCmd = &cobra.Command{
 For AWS:
 - Secrets starting with / are from SSM Parameter Store
 - Other secrets are from Secrets Manager
+- Prefix ssm: or sm: forces the backend (e.g. ssm:db-pass, sm:/prod/api-key)
 
 Examples:
   cml secrets list                     # List all secrets
@@ -59,8 +62,10 @@ var secretsGetCmd = &cobra.Command{
 	Long: `Get the value of a secret.
 
 For AWS:
-- Secrets starting with / are retrieved from SSM Parameter Store
-- Other secrets are retrieved from Secrets Manager
+- Names starting with / are retrieved from SSM Parameter Store
+- Other names are retrieved from Secrets Manager, falling back to SSM
+  when not found
+- Prefix ssm: or sm: forces the backend (e.g. sm:/prod/api-key)
 
 Examples:
   cml secrets get /app/db-password
@@ -76,7 +81,9 @@ var secretsSetCmd = &cobra.Command{
 
 For AWS:
 - Names starting with / are stored in SSM Parameter Store
-- Other names are stored in Secrets Manager
+- Other names are stored in Secrets Manager, unless an SSM parameter
+  of the same name already exists
+- Prefix ssm: or sm: forces the backend (e.g. ssm:db-pass)
 
 Examples:
   cml secrets set /app/db-password "mysecret"
@@ -88,11 +95,16 @@ Examples:
 var secretsDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
 	Short: "Delete a secret",
-	Long: `Delete a secret.
+	Long: `Delete a secret. Asks for confirmation.
+
+Secrets Manager secrets stay recoverable for 7 days after deletion
+unless --force is given, which deletes them immediately and
+irreversibly. SSM parameters are deleted immediately and cannot be
+recovered. Pass --yes to skip the prompt in scripts.
 
 Examples:
   cml secrets delete /app/old-param
-  cml secrets delete my-old-secret`,
+  cml secrets delete my-old-secret --force`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSecretsDelete,
 }
@@ -101,6 +113,8 @@ var (
 	secretsContextFlag string
 	secretsSSMOnly     bool
 	secretsSMOnly      bool
+	secretsDeleteForce bool
+	secretsYes         bool
 )
 
 func init() {
@@ -113,6 +127,10 @@ func init() {
 	// List flags
 	secretsListCmd.Flags().BoolVar(&secretsSSMOnly, "ssm-only", false, "List only SSM Parameter Store secrets")
 	secretsListCmd.Flags().BoolVar(&secretsSMOnly, "sm-only", false, "List only Secrets Manager secrets")
+
+	// Delete flags
+	secretsDeleteCmd.Flags().BoolVar(&secretsDeleteForce, "force", false, "Delete immediately without a recovery window (Secrets Manager)")
+	secretsDeleteCmd.Flags().BoolVarP(&secretsYes, "yes", "y", false, "Skip confirmation prompt")
 
 	// Global context override
 	secretsCmd.PersistentFlags().StringVarP(&secretsContextFlag, "context", "c", "", "Use specific context")
@@ -169,6 +187,11 @@ func getSecretsProvider(ctx context.Context) (provider.SecretsProvider, error) {
 }
 
 func runSecretsList(cmd *cobra.Command, args []string) error {
+	source, err := secretsListSource(secretsSSMOnly, secretsSMOnly)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	secretsProvider, err := getSecretsProvider(ctx)
@@ -177,7 +200,7 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build filter
-	filter := &provider.SecretFilter{}
+	filter := &provider.SecretFilter{Source: source}
 	if len(args) > 0 {
 		filter.Prefix = args[0]
 	}
@@ -197,6 +220,20 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 	printSecretsTable(secrets)
 
 	return nil
+}
+
+// secretsListSource maps the --ssm-only/--sm-only flags to a backend selection.
+func secretsListSource(ssmOnly, smOnly bool) (provider.SecretSource, error) {
+	switch {
+	case ssmOnly && smOnly:
+		return "", fmt.Errorf("--ssm-only and --sm-only cannot be used together")
+	case ssmOnly:
+		return provider.SourceSSM, nil
+	case smOnly:
+		return provider.SourceSM, nil
+	default:
+		return provider.SourceAll, nil
+	}
 }
 
 func runSecretsGet(cmd *cobra.Command, args []string) error {
@@ -246,13 +283,46 @@ func runSecretsDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	name := args[0]
+	opts := provider.DeleteSecretOptions{Force: secretsDeleteForce}
 
-	if err := secretsProvider.Delete(ctx, name); err != nil {
+	proceed, err := confirmAction(secretsYes, os.Stdin, os.Stdout,
+		secretDeletePrompt(name, opts),
+		fmt.Sprintf("refusing to delete %s without confirmation; pass --yes", name),
+	)
+	if err != nil {
 		return err
+	}
+	if !proceed {
+		fmt.Println("Delete cancelled")
+		return nil
+	}
+
+	if err := secretsProvider.Delete(ctx, name, opts); err != nil {
+		return err
+	}
+
+	// A non-forced Secrets Manager delete only schedules the deletion.
+	if backend, _ := aws.ResolveSecretBackend(name); backend == aws.BackendSM && !opts.Force {
+		fmt.Printf("Secret scheduled for deletion: %s (recoverable within %d days)\n", name, aws.SecretsManagerRecoveryWindowDays)
+		return nil
 	}
 
 	fmt.Printf("Secret deleted: %s\n", name)
 	return nil
+}
+
+// secretDeletePrompt builds the confirmation prompt for secrets delete, stating
+// the recovery implications of the backend being deleted from.
+func secretDeletePrompt(name string, opts provider.DeleteSecretOptions) string {
+	ctxName := contextNameForPrompt(secretsContextFlag)
+	backend, stripped := aws.ResolveSecretBackend(name)
+	if backend == aws.BackendSSM {
+		return fmt.Sprintf("Delete SSM parameter %s in context %s? SSM parameters are deleted permanently and cannot be recovered [y/N]", stripped, ctxName)
+	}
+	if opts.Force {
+		return fmt.Sprintf("Delete secret %s in context %s? This permanently deletes it with no recovery [y/N]", stripped, ctxName)
+	}
+	return fmt.Sprintf("Delete secret %s in context %s? It can be recovered for %d days after deletion [y/N]", stripped, ctxName, aws.SecretsManagerRecoveryWindowDays)
 }
 
 // printSecretsTable prints secrets in a table format
@@ -365,11 +435,9 @@ func printSecretDetails(sv *types.SecretValue) {
 }
 
 func padRightSecrets(s string, width int) string {
-	if len(s) >= width {
-		if width > 3 {
-			return s[:width-3] + "..."
-		}
-		return s[:width]
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
+		return runewidth.Truncate(s, width, "...")
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-sw)
 }

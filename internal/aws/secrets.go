@@ -2,7 +2,9 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -13,6 +15,44 @@ import (
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
 )
+
+// SecretBackend identifies which AWS backend holds a secret.
+type SecretBackend string
+
+const (
+	// BackendSSM is SSM Parameter Store.
+	BackendSSM SecretBackend = "ssm"
+	// BackendSM is AWS Secrets Manager.
+	BackendSM SecretBackend = "sm"
+)
+
+// SecretsManagerRecoveryWindowDays is the default recovery window (in days)
+// applied to Secrets Manager deletions.
+const SecretsManagerRecoveryWindowDays = 7
+
+// resolveSecretRoute maps a user-provided secret name to its backend. An
+// explicit `ssm:`/`sm:` prefix forces the backend and is stripped. Without a
+// prefix, a leading `/` routes to SSM; anything else routes to Secrets Manager
+// but may still live in SSM, so callers fall back there when the secret is not
+// found (fallbackSSM).
+func resolveSecretRoute(name string) (SecretBackend, string, bool) {
+	if n, ok := strings.CutPrefix(name, "ssm:"); ok {
+		return BackendSSM, n, false
+	}
+	if n, ok := strings.CutPrefix(name, "sm:"); ok {
+		return BackendSM, n, false
+	}
+	if strings.HasPrefix(name, "/") {
+		return BackendSSM, name, false
+	}
+	return BackendSM, name, true
+}
+
+// ResolveSecretBackend returns the backend and the stripped name for a secret name.
+func ResolveSecretBackend(name string) (SecretBackend, string) {
+	backend, n, _ := resolveSecretRoute(name)
+	return backend, n
+}
 
 // AWSSecretsProvider implements the SecretsProvider interface for AWS
 // It supports both SSM Parameter Store and Secrets Manager
@@ -37,6 +77,19 @@ func NewSecretsProvider(client *Client, ssmClient *ssm.Client, smClient *secrets
 
 // List returns secrets matching the filter
 func (p *AWSSecretsProvider) List(ctx context.Context, filter *provider.SecretFilter) ([]types.Secret, error) {
+	// Query only the selected backend so a missing permission on the other one
+	// does not fail the whole listing.
+	if filter != nil && filter.Source != "" && filter.Source != provider.SourceAll {
+		switch filter.Source {
+		case provider.SourceSSM:
+			return p.listSSMParameters(ctx, filter)
+		case provider.SourceSM:
+			return p.listSecretsManager(ctx, filter)
+		default:
+			return nil, fmt.Errorf("unknown secret source: %s", filter.Source)
+		}
+	}
+
 	var secrets []types.Secret
 
 	// List from SSM Parameter Store
@@ -137,13 +190,22 @@ func (p *AWSSecretsProvider) listSecretsManager(ctx context.Context, filter *pro
 
 // Get returns a secret value
 func (p *AWSSecretsProvider) Get(ctx context.Context, name string) (*types.SecretValue, error) {
-	// Try SSM Parameter Store first (for paths starting with /)
-	if len(name) > 0 && name[0] == '/' {
-		return p.getSSMParameter(ctx, name)
+	backend, n, fallbackSSM := resolveSecretRoute(name)
+
+	if backend == BackendSSM {
+		return p.getSSMParameter(ctx, n)
 	}
 
-	// Try Secrets Manager
-	return p.getSecretsManager(ctx, name)
+	value, err := p.getSecretsManager(ctx, n)
+	if err != nil {
+		// Fall back to SSM by the same name when the secret is not in Secrets Manager.
+		var notFound *smTypes.ResourceNotFoundException
+		if errors.As(err, &notFound) && fallbackSSM {
+			return p.getSSMParameter(ctx, n)
+		}
+		return nil, err
+	}
+	return value, nil
 }
 
 func (p *AWSSecretsProvider) getSSMParameter(ctx context.Context, name string) (*types.SecretValue, error) {
@@ -190,13 +252,45 @@ func (p *AWSSecretsProvider) getSecretsManager(ctx context.Context, name string)
 
 // Set creates or updates a secret
 func (p *AWSSecretsProvider) Set(ctx context.Context, name string, value string) error {
-	// Use SSM Parameter Store for paths starting with /
-	if len(name) > 0 && name[0] == '/' {
-		return p.setSSMParameter(ctx, name, value)
+	backend, n, fallbackSSM := resolveSecretRoute(name)
+
+	if backend == BackendSSM {
+		return p.setSSMParameter(ctx, n, value)
 	}
 
-	// Use Secrets Manager for other secrets
-	return p.setSecretsManager(ctx, name, value)
+	if fallbackSSM {
+		// Update the existing SSM parameter (keeping its type) instead of
+		// creating a duplicate Secrets Manager secret.
+		existing, err := p.ssm.GetParameter(ctx, &ssm.GetParameterInput{
+			Name:           &n,
+			WithDecryption: boolPtr(true),
+		})
+		if err != nil {
+			var notFound *ssmTypes.ParameterNotFound
+			if !errors.As(err, &notFound) {
+				return fmt.Errorf("failed to check SSM parameter %s: %w", n, err)
+			}
+			// Not in SSM — create in Secrets Manager below.
+		} else if existing.Parameter != nil {
+			paramType := existing.Parameter.Type
+			if paramType == "" {
+				paramType = ssmTypes.ParameterTypeSecureString
+			}
+			_, err = p.ssm.PutParameter(ctx, &ssm.PutParameterInput{
+				Name:      &n,
+				Value:     &value,
+				Type:      paramType,
+				Overwrite: boolPtr(true),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to update SSM parameter %s: %w", n, err)
+			}
+			return nil
+		}
+	}
+
+	// Use Secrets Manager
+	return p.setSecretsManager(ctx, n, value)
 }
 
 func (p *AWSSecretsProvider) setSSMParameter(ctx context.Context, name, value string) error {
@@ -206,7 +300,10 @@ func (p *AWSSecretsProvider) setSSMParameter(ctx context.Context, name, value st
 		Type:      ssmTypes.ParameterTypeSecureString,
 		Overwrite: boolPtr(true),
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to set SSM parameter %s: %w", name, err)
+	}
+	return nil
 }
 
 func (p *AWSSecretsProvider) setSecretsManager(ctx context.Context, name, value string) error {
@@ -216,35 +313,64 @@ func (p *AWSSecretsProvider) setSecretsManager(ctx context.Context, name, value 
 		SecretString: &value,
 	})
 	if err != nil {
-		// If secret doesn't exist, create it
-		_, err = p.sm.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
-			Name:         &name,
-			SecretString: &value,
-		})
+		// Only create when the secret doesn't exist; anything else
+		// (permissions, throttling, pending deletion) must surface as-is.
+		var notFound *smTypes.ResourceNotFoundException
+		if errors.As(err, &notFound) {
+			_, err = p.sm.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
+				Name:         &name,
+				SecretString: &value,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create secret %s: %w", name, err)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to update secret %s: %w", name, err)
 	}
-	return err
+	return nil
 }
 
 // Delete removes a secret
-func (p *AWSSecretsProvider) Delete(ctx context.Context, name string) error {
-	// Use SSM Parameter Store for paths starting with /
-	if len(name) > 0 && name[0] == '/' {
-		_, err := p.ssm.DeleteParameter(ctx, &ssm.DeleteParameterInput{
-			Name: &name,
-		})
-		return err
+func (p *AWSSecretsProvider) Delete(ctx context.Context, name string, opts provider.DeleteSecretOptions) error {
+	backend, n, fallbackSSM := resolveSecretRoute(name)
+
+	if backend == BackendSSM {
+		return p.deleteSSMParameter(ctx, n)
 	}
 
-	// Use Secrets Manager for other secrets
-	_, err := p.sm.DeleteSecret(ctx, &secretsmanager.DeleteSecretInput{
-		SecretId:                   &name,
-		ForceDeleteWithoutRecovery: boolPtr(true),
+	input := &secretsmanager.DeleteSecretInput{SecretId: &n}
+	if opts.Force {
+		input.ForceDeleteWithoutRecovery = boolPtr(true)
+	} else {
+		input.RecoveryWindowInDays = int64Ptr(SecretsManagerRecoveryWindowDays)
+	}
+
+	_, err := p.sm.DeleteSecret(ctx, input)
+	if err != nil {
+		// Fall back to SSM by the same name when the secret is not in Secrets Manager.
+		var notFound *smTypes.ResourceNotFoundException
+		if errors.As(err, &notFound) && fallbackSSM {
+			return p.deleteSSMParameter(ctx, n)
+		}
+		return fmt.Errorf("failed to delete secret %s: %w", n, err)
+	}
+	return nil
+}
+
+func (p *AWSSecretsProvider) deleteSSMParameter(ctx context.Context, name string) error {
+	_, err := p.ssm.DeleteParameter(ctx, &ssm.DeleteParameterInput{
+		Name: &name,
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete SSM parameter %s: %w", name, err)
+	}
+	return nil
 }
 
 func strPtr(s string) *string { return &s }
 func boolPtr(b bool) *bool    { return &b }
+func int64Ptr(i int64) *int64 { return &i }
 
 func safeTime(t *time.Time) time.Time {
 	if t == nil {

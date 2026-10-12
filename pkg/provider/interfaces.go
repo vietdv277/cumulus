@@ -61,6 +61,25 @@ type TunnelOptions struct {
 // SecretFilter contains filters for secret listing
 type SecretFilter struct {
 	Prefix string
+	Source SecretSource // backend to query (all backends when empty)
+}
+
+// SecretSource selects which secret backend to query
+type SecretSource string
+
+const (
+	// SourceAll queries every backend
+	SourceAll SecretSource = ""
+	// SourceSSM queries only SSM Parameter Store
+	SourceSSM SecretSource = "ssm"
+	// SourceSM queries only Secrets Manager
+	SourceSM SecretSource = "sm"
+)
+
+// DeleteSecretOptions contains options for deleting a secret
+type DeleteSecretOptions struct {
+	// Force deletes immediately without a recovery window (Secrets Manager)
+	Force bool
 }
 
 // SecretsProvider defines the interface for secrets operations
@@ -75,7 +94,7 @@ type SecretsProvider interface {
 	Set(ctx context.Context, name string, value string) error
 
 	// Delete removes a secret
-	Delete(ctx context.Context, name string) error
+	Delete(ctx context.Context, name string, opts DeleteSecretOptions) error
 }
 
 // DBFilter contains filters for database listing
