@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
+	"github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
@@ -22,26 +24,29 @@ var logsCmd = &cobra.Command{
 	Use:     "logs <target>",
 	Aliases: []string{"log"},
 	Short:   "Query and tail logs",
-	Long: `Query or tail log groups in the current context.
+	Long: `Query or tail logs in the current context.
 
-On AWS a target is a CloudWatch log group; 'logs list' shows the
-available groups. GCP contexts are not supported yet.
+On AWS a target is a CloudWatch log group and --filter is a CloudWatch
+filter pattern. On GCP a target is a Cloud Logging log name (e.g.
+cloudaudit.googleapis.com/activity) and --filter is a Logging query
+expression. 'logs list' shows the available targets.
 
 Examples:
   cml logs /aws/lambda/api            # last 15 minutes
   cml logs /aws/lambda/api --since 1h --limit 50
   cml logs /aws/lambda/api --filter ERROR
   cml logs /aws/lambda/api -f         # tail (Ctrl-C to stop)
-  cml logs list /aws/lambda/          # list log groups by prefix`,
+  cml logs list /aws/lambda/          # list log groups by prefix
+  cml logs run.googleapis.com/stderr --filter 'severity>=ERROR'   # GCP`,
 	Args: cobra.ExactArgs(1),
 	RunE: runLogsQuery,
 }
 
 var logsListCmd = &cobra.Command{
 	Use:   "list [prefix]",
-	Short: "List log groups",
-	Long: `List log groups in the current context, optionally filtered by
-name prefix.
+	Short: "List log groups (AWS) or log names (GCP)",
+	Long: `List log groups (AWS) or log names (GCP) in the current context,
+optionally filtered by name prefix.
 
 Examples:
   cml logs list                # all log groups
@@ -62,9 +67,9 @@ func init() {
 	rootCmd.AddCommand(logsCmd)
 	logsCmd.AddCommand(logsListCmd)
 
-	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Tail the log group continuously (Ctrl-C to stop)")
+	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Tail the target continuously (Ctrl-C to stop)")
 	logsCmd.Flags().StringVar(&logsSince, "since", "15m", "How far back to start (Go duration, e.g. 15m, 1h)")
-	logsCmd.Flags().StringVar(&logsFilter, "filter", "", "CloudWatch filter pattern")
+	logsCmd.Flags().StringVar(&logsFilter, "filter", "", "Filter: CloudWatch pattern (AWS) or Logging query (GCP)")
 	logsCmd.Flags().IntVar(&logsLimit, "limit", 100, "Max entries returned (query only)")
 
 	logsCmd.PersistentFlags().StringVarP(&logsContextFlag, "context", "c", "", "Use specific context")
@@ -179,11 +184,24 @@ func getLogsProvider(ctx context.Context) (provider.LogsProvider, error) {
 		return aws.NewLogsProvider(client), nil
 
 	case "gcp":
-		return nil, fmt.Errorf("logs are not yet implemented for GCP (context: %s)", ctxName)
+		return newGCPLogsProvider(ctx, ctxConfig)
 
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (context: %s)", ctxConfig.Provider, ctxName)
 	}
+}
+
+// newGCPLogsProvider builds the Cloud Logging provider; a variable so tests can
+// check the routing without GCP credentials.
+var newGCPLogsProvider = func(ctx context.Context, ctxConfig *config.Context) (provider.LogsProvider, error) {
+	client, err := gcp.NewClient(ctx,
+		gcp.WithProject(ctxConfig.Project),
+		gcp.WithRegion(ctxConfig.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCP client: %w", err)
+	}
+	return gcp.NewLogsProvider(client), nil
 }
 
 // logsQuery runs a one-shot query against the target.

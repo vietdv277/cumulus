@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
 )
 
@@ -202,16 +206,25 @@ func TestLogsRejectsProfileFlag(t *testing.T) {
 	}
 }
 
-func TestLogsGCPContextMessage(t *testing.T) {
-	// Direct context name and its alias must both name the resolved context.
+func TestLogsGCPContextRoutesToCloudLogging(t *testing.T) {
+	orig := newGCPLogsProvider
+	t.Cleanup(func() { newGCPLogsProvider = orig })
+	errStub := errors.New("gcp logs provider called")
+
+	// Direct context name and its alias must both reach the GCP provider with
+	// the resolved context.
 	for _, flag := range []string{"gcp:staging", "stg"} {
-		err := runLogsCmd(t, "logs", "mygroup", "-c", flag)
-		if err == nil {
-			t.Fatalf("expected error for a GCP context (-c %s)", flag)
+		var gotProject string
+		newGCPLogsProvider = func(_ context.Context, c *config.Context) (provider.LogsProvider, error) {
+			gotProject = c.Project
+			return nil, errStub
 		}
-		want := "logs are not yet implemented for GCP (context: gcp:staging)"
-		if err.Error() != want {
-			t.Errorf("err = %q, want %q", err.Error(), want)
+		err := runLogsCmd(t, "logs", "mygroup", "-c", flag)
+		if !errors.Is(err, errStub) {
+			t.Fatalf("-c %s: err = %v, want the GCP provider to be used", flag, err)
+		}
+		if gotProject == "" {
+			t.Errorf("-c %s: GCP provider got an empty project", flag)
 		}
 	}
 }

@@ -143,11 +143,11 @@ The config file is written atomically (temp file + rename) with mode 0600, in a 
 All cloud resources are abstracted behind interfaces: `VMProvider`, `SecretsProvider`,
 `DBProvider`, `StorageProvider`, `LogsProvider`, `K8sProvider`. The `CloudProvider`
 interface aggregates them all. AWS implementations (vm, secrets, db, storage, logs, k8s) live
-in `internal/aws/`; GCP implementations (vm, secrets, db, storage, k8s) live in `internal/gcp/`.
+in `internal/aws/`; GCP implementations (vm, secrets, db, storage, logs, k8s) live in `internal/gcp/`.
 GCP secrets, db and storage use the REST clients in `google.golang.org/api` (Secret Manager,
 Cloud SQL Admin, Cloud Storage); `db connect` on GCP runs `cloud-sql-proxy`, and GCS presign
 signs V4 URLs locally from service-account key credentials.
-`LogsProvider` is implemented for AWS (CloudWatch) only; GCP logs are not wired yet.
+`LogsProvider` is implemented for AWS (CloudWatch Logs) and GCP (Cloud Logging, `logging/v2`).
 
 ### Kubeconfig (`internal/kubeconfig/`)
 
@@ -167,11 +167,12 @@ is torn down in the deferred handler. `StartPortForward` is shared with
 ### Logs (`cml logs`)
 
 `cml logs <target>` queries, `cml logs <target> -f` tails, `cml logs list
-[prefix]` lists log groups. The AWS implementation is `internal/aws/logs.go`
-(CloudWatch `FilterLogEvents`/`DescribeLogGroups` via paginators, deduped by
-event ID); the GCP implementation does not exist yet and `cml logs` on a GCP
-context errors with "logs are not yet implemented for GCP". `--follow`
-rejects `-o yaml` and `--limit`; Ctrl-C during a tail exits 0.
+[prefix]` lists targets. AWS (`internal/aws/logs.go`): a target is a log
+group; CloudWatch `FilterLogEvents`/`DescribeLogGroups` via paginators, deduped
+by event ID. GCP (`internal/gcp/logs.go`): a target is a log name;
+`entries.list` with a `logName`/`timestamp` filter plus `--filter` in
+parentheses, deduped by insert ID. Both tail by polling (default 2s).
+`--follow` rejects `-o yaml` and `--limit`; Ctrl-C during a tail exits 0.
 
 Tunnel lifecycle rules: the local port must be free before the tunnel starts (a busy port
 would silently route through another tunnel); readiness fails fast if the tunnel process
@@ -257,7 +258,7 @@ cml
 │   ├── cp <src> <dst>     # Copy one object (local ↔ remote, remote → remote; ≤ 5 GiB on S3)
 │   ├── sync <src> <dst>   # Sync directory (aws s3 sync / gcloud storage rsync; --delete confirms; --yes)
 │   └── presign <uri>      # Presigned GET URL (V4 on GCS, needs service-account credentials; expiry ≤ 7 days)
-├── logs (log)              # Query/tail logs (AWS CloudWatch; GCP not yet supported)
+├── logs (log)              # Query/tail logs (AWS CloudWatch Logs; GCP Cloud Logging)
 │   ├── <target>            # Query a log group (--since, --filter, --limit, -f/--follow)
 │   └── list [prefix]       # List log groups (--output json/yaml)
 ├── k8s                    # Kubernetes cluster management
