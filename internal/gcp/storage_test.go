@@ -186,6 +186,39 @@ func TestSignedV4GetURL(t *testing.T) {
 		t.Errorf("path = %q, want /my-bucket/dir/key%%20with%%20space.txt", u.EscapedPath())
 	}
 
+	// Everything below is written from the GCS V4 spec layout for this fixed
+	// input, independent of the package's own helpers.
+
+	const wantQuery = "X-Goog-Algorithm=GOOG4-RSA-SHA256" +
+		"&X-Goog-Credential=sa%40project.iam.gserviceaccount.com%2F20260615%2Fauto%2Fstorage%2Fgoog4_request" +
+		"&X-Goog-Date=20260615T103000Z" +
+		"&X-Goog-Expires=3600" +
+		"&X-Goog-SignedHeaders=host"
+
+	const canonicalRequest = "GET\n" +
+		"/my-bucket/dir/key%20with%20space.txt\n" +
+		"X-Goog-Algorithm=GOOG4-RSA-SHA256" +
+		"&X-Goog-Credential=sa%40project.iam.gserviceaccount.com%2F20260615%2Fauto%2Fstorage%2Fgoog4_request" +
+		"&X-Goog-Date=20260615T103000Z" +
+		"&X-Goog-Expires=3600" +
+		"&X-Goog-SignedHeaders=host\n" +
+		"host:storage.googleapis.com\n" +
+		"\n" +
+		"host\n" +
+		"UNSIGNED-PAYLOAD"
+
+	const wantStringToSign = "GOOG4-RSA-SHA256\n" +
+		"20260615T103000Z\n" +
+		"20260615/auto/storage/goog4_request\n" +
+		"081fb15c62c04c1318ea430a3b0fe6c753289fe22c77009d0cb59c1cc64df5c7"
+
+	// Guard the hard-coded digest in wantStringToSign against the canonical
+	// request literal it was derived from.
+	reqDigest := sha256.Sum256([]byte(canonicalRequest))
+	if got := hex.EncodeToString(reqDigest[:]); !strings.Contains(wantStringToSign, got) {
+		t.Fatalf("hard-coded string-to-sign digest mismatch: canonical request hashes to %s", got)
+	}
+
 	// The query before the signature must be the canonical query string.
 	const sigParam = "X-Goog-Signature="
 	rawQuery := u.RawQuery
@@ -198,37 +231,12 @@ func TestSignedV4GetURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode signature: %v", err)
 	}
-
-	wantQuery := strings.Join([]string{
-		"X-Goog-Algorithm=GOOG4-RSA-SHA256",
-		"X-Goog-Credential=sa%40project.iam.gserviceaccount.com%2F20260615%2Fauto%2Fstorage%2Fgo4_request",
-		"X-Goog-Date=20260615T103000Z",
-		"X-Goog-Expires=3600",
-		"X-Goog-SignedHeaders=host",
-	}, "&")
 	if query != wantQuery {
 		t.Errorf("canonical query =\n%s\nwant\n%s", query, wantQuery)
 	}
 
-	// Rebuild the documented canonical request and verify the signature with
-	// the public key — this checks both the signature and the request shape.
-	canonical := strings.Join([]string{
-		"GET",
-		"/my-bucket/dir/key%20with%20space.txt",
-		wantQuery,
-		"host:storage.googleapis.com",
-		"",
-		"host",
-		"UNSIGNED-PAYLOAD",
-	}, "\n")
-	reqDigest := sha256.Sum256([]byte(canonical))
-	toSign := strings.Join([]string{
-		"GOOG4-RSA-SHA256",
-		"20260615T103000Z",
-		"20260615/auto/storage/go4_request",
-		hex.EncodeToString(reqDigest[:]),
-	}, "\n")
-	msgDigest := sha256.Sum256([]byte(toSign))
+	// The signature covers the spec string-to-sign — verify with the public key.
+	msgDigest := sha256.Sum256([]byte(wantStringToSign))
 	if err := rsa.VerifyPKCS1v15(&priv.PublicKey, crypto.SHA256, msgDigest[:], sig); err != nil {
 		t.Errorf("signature verification failed: %v", err)
 	}

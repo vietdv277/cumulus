@@ -18,8 +18,9 @@ import (
 // V4 signing constants for presigned GCS GET URLs.
 const (
 	goog4Algorithm = "GOOG4-RSA-SHA256"
-	goog4Request   = "go4_request"
-	gcsHost        = "storage.googleapis.com"
+	// goog4Request is the GCS V4 credential-scope suffix (note the "g": goog4_request).
+	goog4Request = "goog4_request"
+	gcsHost      = "storage.googleapis.com"
 	// gcsScopeRegion: GCS accepts "auto" for the region in the credential scope.
 	gcsScopeRegion = "auto"
 )
