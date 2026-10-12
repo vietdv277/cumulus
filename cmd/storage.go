@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -66,6 +67,7 @@ var (
 	storageContextFlag string
 	storageSyncDelete  bool
 	storageSyncDryRun  bool
+	storageSyncYes     bool
 	storagePresignTTL  int
 )
 
@@ -78,6 +80,7 @@ func init() {
 
 	storageSyncCmd.Flags().BoolVar(&storageSyncDelete, "delete", false, "Delete files in dst not present in src")
 	storageSyncCmd.Flags().BoolVar(&storageSyncDryRun, "dry-run", false, "Show what would be transferred")
+	storageSyncCmd.Flags().BoolVarP(&storageSyncYes, "yes", "y", false, "Skip confirmation prompt")
 
 	storagePresignCmd.Flags().IntVar(&storagePresignTTL, "expires", 3600, "URL TTL in seconds")
 
@@ -183,6 +186,21 @@ func runStorageSync(cmd *cobra.Command, args []string) error {
 	sp, err := getStorageProvider(ctx)
 	if err != nil {
 		return err
+	}
+	// --dry-run deletes nothing, so it needs no confirmation.
+	if storageSyncDelete && !storageSyncDryRun {
+		proceed, err := confirmAction(storageSyncYes, os.Stdin, os.Stdout,
+			fmt.Sprintf("Sync %s -> %s in context %s and delete destination objects not in src? [y/N]",
+				args[0], args[1], contextNameForPrompt(storageContextFlag)),
+			fmt.Sprintf("refusing to sync %s with --delete without confirmation; pass --yes", args[1]),
+		)
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			fmt.Println("Sync cancelled")
+			return nil
+		}
 	}
 	opts := &provider.SyncOptions{Delete: storageSyncDelete, DryRun: storageSyncDryRun}
 	return sp.Sync(ctx, args[0], args[1], opts)

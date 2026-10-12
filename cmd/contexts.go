@@ -51,7 +51,10 @@ func runContexts(cmd *cobra.Command, args []string) error {
 	if ctxInteractive {
 		selected, err := ui.SelectContext(contexts, current)
 		if err != nil {
-			return nil // cancelled — silent exit
+			if isSelectorCancelled(err) {
+				return nil // cancelled — silent exit
+			}
+			return err
 		}
 		if selected == current {
 			fmt.Printf("Already on context: %s\n", selected)
