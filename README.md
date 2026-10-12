@@ -29,6 +29,7 @@ cml vm list
 - **Interactive selectors** — pick resources from a filterable TUI without memorizing IDs
 - **GCP bastion / IAP** — connect to private GCE instances through a bastion with optional IAP tunneling
 - **Unified secrets** — AWS SSM Parameter Store, Secrets Manager, and GCP Secret Manager behind one command
+- **Log queries** — query and tail CloudWatch log groups with filters and JSON/YAML output
 - **Beautiful output** — styled tables with color-coded state indicators
 
 ## Installation
@@ -439,6 +440,29 @@ $ exit
 
 Flags: `--bastion` / `--local-port` override the context defaults per
 invocation. AWS-only for now; GCP contexts return a clear error.
+
+## Logs
+
+Query or tail CloudWatch log groups from the current AWS context.
+
+```bash
+cml logs list /aws/lambda/            # list log groups by prefix (or all)
+cml logs /aws/lambda/api              # last 15 minutes, one line per entry
+cml logs /aws/lambda/api --since 1h   # look further back (Go duration)
+cml logs /aws/lambda/api --filter ERROR            # CloudWatch filter pattern
+cml logs /aws/lambda/api --limit 50                # max entries (default 100)
+cml logs /aws/lambda/api -f                        # tail; Ctrl-C to stop
+cml logs /aws/lambda/api -f -o json                # tail as NDJSON (one object per line)
+cml logs /aws/lambda/api -c prod                   # override the context
+```
+
+Table/text output prints `2026-10-12T09:15:02Z [stream] LEVEL message`
+per entry (level is omitted when CloudWatch has none). `-o json` / `-o
+yaml` render the whole query result; while following, only `-o json` is
+supported (NDJSON). `--limit` applies to queries only.
+
+AWS-only for now; GCP contexts return a clear error until the GCP
+Logging provider lands.
 
 ## AWS-specific commands
 

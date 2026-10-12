@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.62.5
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.69.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.1
 	github.com/aws/aws-sdk-go-v2/service/eks v1.82.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.54.6
