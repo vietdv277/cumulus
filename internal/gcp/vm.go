@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
+	"github.com/vietdv277/cumulus/internal/suggest"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
 )
@@ -344,7 +345,7 @@ func (p *GCPVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, er
 	case 1:
 		return &matches[0], nil
 	case 0:
-		return nil, fmt.Errorf("instance not found: %s", nameOrID)
+		return nil, instanceNotFound(nameOrID, instanceNames(all))
 	default:
 		zones := make([]string, 0, len(matches))
 		for _, m := range matches {
@@ -355,6 +356,24 @@ func (p *GCPVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, er
 			nameOrID, strings.Join(zones, ", "), zones[0],
 		)
 	}
+}
+
+// instanceNames returns the names of the listed instances.
+func instanceNames(vms []types.VM) []string {
+	names := make([]string, 0, len(vms))
+	for _, vm := range vms {
+		names = append(names, vm.Name)
+	}
+	return names
+}
+
+// instanceNotFound builds the not-found error for a name lookup, suggesting
+// close instance names when any exist.
+func instanceNotFound(name string, names []string) error {
+	if hint := suggest.DidYouMean(suggest.Similar(name, names, 3)); hint != "" {
+		return fmt.Errorf("instance not found: %s — %s", name, hint)
+	}
+	return fmt.Errorf("instance not found: %s", name)
 }
 
 // resolveVM looks up a VM and returns it with the zone field populated.

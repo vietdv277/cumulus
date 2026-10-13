@@ -92,6 +92,44 @@ func TestSelectInstance(t *testing.T) {
 	}
 }
 
+func TestInstanceNotFound(t *testing.T) {
+	// No EC2 test seam exists (Client.EC2() is the concrete SDK client), so
+	// the message composition is tested through this pure helper.
+	tests := []struct {
+		name   string
+		lookup string
+		names  []string
+		want   string
+	}{
+		{
+			name:   "typo suggests close names",
+			lookup: "web-01",
+			names:  []string{"web-1", "web-02", "api"},
+			want:   `instance not found: web-01 — did you mean "web-02" or "web-1"?`,
+		},
+		{
+			name:   "no close names keeps today's text",
+			lookup: "web-01",
+			names:  []string{"api", "db"},
+			want:   "instance not found: web-01",
+		},
+		{
+			name:   "no candidates",
+			lookup: "web-01",
+			names:  nil,
+			want:   "instance not found: web-01",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := instanceNotFound(tt.lookup, tt.names).Error(); got != tt.want {
+				t.Errorf("instanceNotFound(%q, %v) = %q, want %q", tt.lookup, tt.names, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInstanceStateNameNilState(t *testing.T) {
 	// A nil State used to panic on i.State.Name.
 	var inst ec2types.Instance

@@ -1,6 +1,59 @@
 package gcp
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	"github.com/vietdv277/cumulus/pkg/types"
+)
+
+func TestInstanceNames(t *testing.T) {
+	vms := []types.VM{{Name: "web-1"}, {Name: "api"}}
+	if got := instanceNames(vms); !reflect.DeepEqual(got, []string{"web-1", "api"}) {
+		t.Errorf("instanceNames() = %v, want [web-1 api]", got)
+	}
+	if got := instanceNames(nil); len(got) != 0 {
+		t.Errorf("instanceNames(nil) = %v, want empty", got)
+	}
+}
+
+func TestInstanceNotFound(t *testing.T) {
+	// The instances client is built from real credentials inside Get, so
+	// the message composition is tested through this pure helper.
+	tests := []struct {
+		name   string
+		lookup string
+		names  []string
+		want   string
+	}{
+		{
+			name:   "typo suggests close names",
+			lookup: "web-01",
+			names:  []string{"web-1", "web-02", "api"},
+			want:   `instance not found: web-01 — did you mean "web-02" or "web-1"?`,
+		},
+		{
+			name:   "no close names keeps today's text",
+			lookup: "web-01",
+			names:  []string{"api", "db"},
+			want:   "instance not found: web-01",
+		},
+		{
+			name:   "no candidates",
+			lookup: "web-01",
+			names:  nil,
+			want:   "instance not found: web-01",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := instanceNotFound(tt.lookup, tt.names).Error(); got != tt.want {
+				t.Errorf("instanceNotFound(%q, %v) = %q, want %q", tt.lookup, tt.names, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestLocationClassification(t *testing.T) {
 	cases := []struct {
