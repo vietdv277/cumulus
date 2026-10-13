@@ -161,6 +161,20 @@ func TestSimilar(t *testing.T) {
 			want:       nil,
 		},
 		{
+			name:       "empty candidate skipped",
+			lookup:     "a",
+			candidates: []string{""},
+			n:          3,
+			want:       nil,
+		},
+		{
+			name:       "empty candidate does not shadow real matches",
+			lookup:     "a",
+			candidates: []string{"", "ab"},
+			n:          3,
+			want:       []string{"ab"},
+		},
+		{
 			name:       "rune-based distance",
 			lookup:     "café",
 			candidates: []string{"cafe", "unrelated"},

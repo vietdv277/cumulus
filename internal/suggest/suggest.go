@@ -10,13 +10,14 @@ import (
 
 // Similar returns up to n candidates close to name, closest first.
 //
-// Candidates are compared case-insensitively; a candidate exactly equal to
-// name is skipped and duplicates are dropped. A candidate qualifies when it
-// is case-insensitively equal, within a Levenshtein distance threshold of
-// name (1 when name is at most 3 runes, 2 when at most 7, else 3), or has
-// name as a prefix (name at least 2 runes). A candidate containing ':' is
-// also compared against the part after the last ':' and keeps the better
-// score, so "prod" suggests "aws:prod".
+// Candidates are compared case-insensitively; empty candidates (unnamed
+// instances), a candidate exactly equal to name and duplicates are
+// skipped. A candidate qualifies when it is case-insensitively equal,
+// within a Levenshtein distance threshold of name (1 when name is at
+// most 3 runes, 2 when at most 7, else 3), or has name as a prefix (name
+// at least 2 runes). A candidate containing ':' is also compared against
+// the part after the last ':' and keeps the better score, so "prod"
+// suggests "aws:prod".
 //
 // Order: case-insensitive equal first, then smaller distance, then prefix
 // matches, then alphabetical.
@@ -30,7 +31,7 @@ func Similar(name string, candidates []string, n int) []string {
 	seen := make(map[string]bool, len(candidates))
 	var matches []candScore
 	for _, c := range candidates {
-		if c == name || seen[c] {
+		if c == "" || c == name || seen[c] {
 			continue
 		}
 		seen[c] = true
