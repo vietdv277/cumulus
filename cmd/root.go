@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -9,6 +10,7 @@ import (
 
 	awscmd "github.com/vietdv277/cumulus/cmd/aws"
 	"github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/errhint"
 )
 
 var (
@@ -50,10 +52,40 @@ Legacy Commands (still available):
 
 // Execute runs the root command.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+	// ExecuteC also returns the failing command, which feeds the hint Env.
+	cmd, err := rootCmd.ExecuteC()
+	if err == nil {
+		return
 	}
+	printError(os.Stderr, err, hintEnv(cmd))
+	os.Exit(1)
+}
+
+// printError writes the error and any recovery hints to w.
+func printError(w io.Writer, err error, env errhint.Env) {
+	_, _ = fmt.Fprintln(w, "Error:", err)
+	for _, hint := range errhint.Hints(err, env) {
+		_, _ = fmt.Fprintln(w, "Hint:", hint)
+	}
+}
+
+// hintEnv resolves the context the failing command ran against so hints can
+// name the right profile or project. It must never fail or print; without a
+// resolvable context it falls back to the legacy profile.
+func hintEnv(c *cobra.Command) errhint.Env {
+	value := ""
+	if f := c.Flag("context"); f != nil {
+		value = f.Value.String()
+	}
+	if ctxCfg, name, err := config.ResolveContext(value); err == nil && ctxCfg != nil {
+		return errhint.Env{
+			Provider: ctxCfg.Provider,
+			Context:  name,
+			Profile:  ctxCfg.Profile,
+			Project:  ctxCfg.Project,
+		}
+	}
+	return errhint.Env{Profile: profile}
 }
 
 func init() {

@@ -2,8 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/aws/smithy-go"
+
+	"github.com/vietdv277/cumulus/internal/errhint"
 )
 
 // runCaptured executes rootCmd with the given args and returns its combined
@@ -52,4 +58,78 @@ func TestArgErrorKeepsUsage(t *testing.T) {
 	if !strings.Contains(out, "Usage:") {
 		t.Errorf("argument error should print usage, got:\n%s", out)
 	}
+}
+
+func TestPrintError(t *testing.T) {
+	t.Run("with hints", func(t *testing.T) {
+		err := fmt.Errorf("list instances: %w", &smithy.OperationError{
+			ServiceID: "EC2", OperationName: "DescribeInstances",
+			Err: &smithy.GenericAPIError{
+				Code: "UnauthorizedOperation",
+				Message: "You are not authorized to perform this operation. " +
+					"User: arn:aws:iam::123456789012:user/dev is not authorized to perform: ec2:DescribeInstances",
+			},
+		})
+
+		var buf bytes.Buffer
+		printError(&buf, err, errhint.Env{Provider: "aws", Context: "aws:prod", Profile: "dev"})
+
+		want := "Error: list instances: operation error EC2: DescribeInstances, " +
+			"api error UnauthorizedOperation: You are not authorized to perform this operation. " +
+			"User: arn:aws:iam::123456789012:user/dev is not authorized to perform: ec2:DescribeInstances\n" +
+			"Hint: profile \"dev\" is not allowed to call ec2:DescribeInstances — check its IAM policy or use another context\n"
+		if buf.String() != want {
+			t.Fatalf("printError wrote:\n%q\nwant:\n%q", buf.String(), want)
+		}
+	})
+
+	t.Run("without hints", func(t *testing.T) {
+		var buf bytes.Buffer
+		printError(&buf, errors.New("boom"), errhint.Env{})
+
+		if got, want := buf.String(), "Error: boom\n"; got != want {
+			t.Fatalf("printError wrote %q, want %q", got, want)
+		}
+	})
+}
+
+func TestHintEnv(t *testing.T) {
+	t.Run("resolves the current context", func(t *testing.T) {
+		setTestConfig(t, testConfigYAML)
+
+		env := hintEnv(rootCmd)
+		want := errhint.Env{Provider: "aws", Context: "aws:prod", Profile: "prod-sso"}
+		if env != want {
+			t.Fatalf("hintEnv(rootCmd) = %+v, want %+v", env, want)
+		}
+	})
+
+	t.Run("resolves the command's context flag", func(t *testing.T) {
+		setTestConfig(t, testConfigYAML)
+
+		if err := vmCmd.PersistentFlags().Set("context", "gcp:staging"); err != nil {
+			t.Fatalf("set context flag: %v", err)
+		}
+		t.Cleanup(func() { _ = vmCmd.PersistentFlags().Set("context", "") })
+
+		env := hintEnv(vmCmd)
+		want := errhint.Env{Provider: "gcp", Context: "gcp:staging", Project: "my-project"}
+		if env != want {
+			t.Fatalf("hintEnv(vmCmd) = %+v, want %+v", env, want)
+		}
+	})
+
+	t.Run("falls back to the legacy profile without a context", func(t *testing.T) {
+		// No config file: ResolveContext fails, so the legacy profile stands.
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		t.Setenv("HOME", t.TempDir())
+
+		old := profile
+		profile = "legacy"
+		t.Cleanup(func() { profile = old })
+
+		if env := hintEnv(rootCmd); env != (errhint.Env{Profile: "legacy"}) {
+			t.Fatalf("hintEnv(rootCmd) = %+v, want the legacy profile", env)
+		}
+	})
 }
