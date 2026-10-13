@@ -328,6 +328,11 @@ func runUseDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := config.DeleteContext(contextName); err != nil {
+		// The not-found error already says what to do; wrapping it would
+		// only bury the suggestion.
+		if errors.Is(err, config.ErrContextNotFound) {
+			return err
+		}
 		return fmt.Errorf("failed to delete context: %w", err)
 	}
 

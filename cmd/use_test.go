@@ -157,6 +157,34 @@ aliases:
 	}
 }
 
+func TestRunUseDeleteUnknownFails(t *testing.T) {
+	setTestConfig(t, testConfigYAML)
+
+	var runErr error
+	out := captureStdout(t, func() { runErr = runUseDelete(useDeleteCmd, []string{"aws:prd"}) })
+	if !errors.Is(runErr, config.ErrContextNotFound) {
+		t.Fatalf("err = %v, want errors.Is(err, config.ErrContextNotFound)", runErr)
+	}
+	want := `context not found: "aws:prd" — did you mean "aws:prod"?`
+	if runErr.Error() != want {
+		t.Fatalf("err = %q, want %q", runErr.Error(), want)
+	}
+	if out != "" {
+		t.Fatalf("stdout = %q, want nothing printed before the failure", out)
+	}
+
+	cfg, err := config.LoadCMLConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Contexts["aws:prod"]; !ok {
+		t.Fatal("config was modified despite the error")
+	}
+	if cfg.CurrentContext != "aws:prod" {
+		t.Fatalf("current context = %q, want aws:prod (unchanged)", cfg.CurrentContext)
+	}
+}
+
 func TestRunUseResolvesAlias(t *testing.T) {
 	setTestConfig(t, testConfigYAML)
 

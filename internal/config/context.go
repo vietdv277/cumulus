@@ -235,6 +235,10 @@ func DeleteContext(name string) error {
 		return err
 	}
 
+	if _, ok := cfg.Contexts[name]; !ok {
+		return fmt.Errorf("%w: %q%s", ErrContextNotFound, name, ContextSuggestion(cfg, name))
+	}
+
 	delete(cfg.Contexts, name)
 
 	// Clear current context if it was the deleted one

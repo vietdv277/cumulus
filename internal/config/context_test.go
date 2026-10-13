@@ -316,6 +316,72 @@ contexts:
 	}
 }
 
+func TestDeleteContextSuggestions(t *testing.T) {
+	t.Run("unknown name suggests and saves nothing", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		err := DeleteContext("aws:prd")
+		if !errors.Is(err, ErrContextNotFound) {
+			t.Fatalf("err = %v, want errors.Is(err, ErrContextNotFound)", err)
+		}
+		want := `context not found: "aws:prd" — did you mean "aws:prod"?`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+		cfg, cfgErr := LoadCMLConfig()
+		if cfgErr != nil {
+			t.Fatal(cfgErr)
+		}
+		if _, ok := cfg.Contexts["aws:prod"]; !ok {
+			t.Fatal("config was modified despite the error")
+		}
+		if cfg.CurrentContext != "aws:prod" {
+			t.Fatalf("current context = %q, want aws:prod (unchanged)", cfg.CurrentContext)
+		}
+	})
+
+	t.Run("unknown name without close match keeps today's text", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		err := DeleteContext("zzzzzz")
+		if !errors.Is(err, ErrContextNotFound) {
+			t.Fatalf("err = %v, want errors.Is(err, ErrContextNotFound)", err)
+		}
+		want := `context not found: "zzzzzz"`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+		cfg, cfgErr := LoadCMLConfig()
+		if cfgErr != nil {
+			t.Fatal(cfgErr)
+		}
+		if len(cfg.Contexts) != 2 {
+			t.Fatalf("contexts = %d, want 2 (unchanged)", len(cfg.Contexts))
+		}
+	})
+
+	t.Run("existing context still deletes and clears current", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		if err := DeleteContext("aws:prod"); err != nil {
+			t.Fatalf("DeleteContext() error = %v", err)
+		}
+		cfg, cfgErr := LoadCMLConfig()
+		if cfgErr != nil {
+			t.Fatal(cfgErr)
+		}
+		if _, ok := cfg.Contexts["aws:prod"]; ok {
+			t.Fatal("aws:prod was not deleted")
+		}
+		if cfg.CurrentContext != "" {
+			t.Fatalf("current context = %q, want empty (the deleted context was current)", cfg.CurrentContext)
+		}
+	})
+}
+
 func TestGetTunnelConfigSuggestions(t *testing.T) {
 	t.Run("typo suggests tunnel names", func(t *testing.T) {
 		isolateHome(t)
