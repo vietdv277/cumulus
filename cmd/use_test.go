@@ -30,6 +30,26 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
+// captureStderr returns what fn writes to os.Stderr.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = orig }()
+
+	fn()
+	_ = w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
 func TestRunUseNotFoundReturnsError(t *testing.T) {
 	setTestConfig(t, testConfigYAML)
 
@@ -43,6 +63,122 @@ func TestRunUseNotFoundReturnsError(t *testing.T) {
 	cfg, err := config.LoadCMLConfig()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.CurrentContext != "aws:prod" {
+		t.Fatalf("current context = %q, want aws:prod (unchanged)", cfg.CurrentContext)
+	}
+}
+
+func TestRunUseNotFoundSuggestsOnce(t *testing.T) {
+	setTestConfig(t, testConfigYAML)
+
+	var runErr error
+	stderr := captureStderr(t, func() { runErr = runUse(useCmd, []string{"aws:prd"}) })
+	if !errors.Is(runErr, config.ErrContextNotFound) {
+		t.Fatalf("err = %v, want errors.Is(err, config.ErrContextNotFound)", runErr)
+	}
+
+	// The suggestion lives in the stderr block; the returned error omits it
+	// so it is not printed twice.
+	if want := `context not found: "aws:prd"`; runErr.Error() != want {
+		t.Fatalf("err = %q, want %q", runErr.Error(), want)
+	}
+	if want := `Context "aws:prd" not found — did you mean "aws:prod"?`; !strings.Contains(stderr, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
+	}
+	if n := strings.Count(stderr, "did you mean"); n != 1 {
+		t.Fatalf("suggestion printed %d times in stderr, want 1:\n%s", n, stderr)
+	}
+}
+
+func TestRunUseNotFoundNoSuggestion(t *testing.T) {
+	setTestConfig(t, testConfigYAML)
+
+	var runErr error
+	stderr := captureStderr(t, func() { runErr = runUse(useCmd, []string{"zzzzzz"}) })
+	if !errors.Is(runErr, config.ErrContextNotFound) {
+		t.Fatalf("err = %v, want errors.Is(err, config.ErrContextNotFound)", runErr)
+	}
+	if want := `context not found: "zzzzzz"`; runErr.Error() != want {
+		t.Fatalf("err = %q, want %q", runErr.Error(), want)
+	}
+	if want := "Context \"zzzzzz\" not found.\n"; !strings.Contains(stderr, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
+	}
+	if strings.Contains(stderr, "did you mean") {
+		t.Fatalf("stderr = %q, want no suggestion", stderr)
+	}
+}
+
+func TestRunUseUpdateNotFoundSuggests(t *testing.T) {
+	setTestConfig(t, testConfigYAML)
+
+	err := runUseUpdate(useUpdateCmd, []string{"aws:prd"})
+	if err == nil {
+		t.Fatal("expected error for an unknown context")
+	}
+	want := `context "aws:prd" not found — did you mean "aws:prod"? — use 'cml use add' to create it`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+
+	err = runUseUpdate(useUpdateCmd, []string{"zzzzzz"})
+	if err == nil {
+		t.Fatal("expected error for an unknown context")
+	}
+	want = `context "zzzzzz" not found — use 'cml use add' to create it`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRunUseDanglingAliasKeepsResolvedName(t *testing.T) {
+	// alias prod → aws:prod, but aws:prod is gone: the returned error must
+	// keep naming the resolved context, exactly like today.
+	setTestConfig(t, `current_context: gcp:staging
+contexts:
+  gcp:staging:
+    provider: gcp
+    project: my-project
+aliases:
+  prod: aws:prod
+`)
+
+	var runErr error
+	stderr := captureStderr(t, func() { runErr = runUse(useCmd, []string{"prod"}) })
+	if !errors.Is(runErr, config.ErrContextNotFound) {
+		t.Fatalf("err = %v, want errors.Is(err, config.ErrContextNotFound)", runErr)
+	}
+	if want := `context not found: "aws:prod"`; runErr.Error() != want {
+		t.Fatalf("err = %q, want %q", runErr.Error(), want)
+	}
+	if want := "Context \"prod\" not found.\n"; !strings.Contains(stderr, want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
+	}
+}
+
+func TestRunUseDeleteUnknownFails(t *testing.T) {
+	setTestConfig(t, testConfigYAML)
+
+	var runErr error
+	out := captureStdout(t, func() { runErr = runUseDelete(useDeleteCmd, []string{"aws:prd"}) })
+	if !errors.Is(runErr, config.ErrContextNotFound) {
+		t.Fatalf("err = %v, want errors.Is(err, config.ErrContextNotFound)", runErr)
+	}
+	want := `context not found: "aws:prd" — did you mean "aws:prod"?`
+	if runErr.Error() != want {
+		t.Fatalf("err = %q, want %q", runErr.Error(), want)
+	}
+	if out != "" {
+		t.Fatalf("stdout = %q, want nothing printed before the failure", out)
+	}
+
+	cfg, err := config.LoadCMLConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Contexts["aws:prod"]; !ok {
+		t.Fatal("config was modified despite the error")
 	}
 	if cfg.CurrentContext != "aws:prod" {
 		t.Fatalf("current context = %q, want aws:prod (unchanged)", cfg.CurrentContext)

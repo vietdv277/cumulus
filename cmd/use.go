@@ -127,27 +127,36 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if err := config.SetCurrentContext(contextName); err != nil {
 		if errors.Is(err, config.ErrContextNotFound) {
 			// If context doesn't exist, show helpful message
-			contexts, current, listErr := config.ListContexts()
+			cfg, listErr := config.LoadCMLConfig()
 			if listErr != nil {
 				return err
 			}
 
-			fmt.Fprintf(os.Stderr, "Context %q not found.\n\n", contextName)
+			// The suggestion lives in this block; the returned error omits
+			// it so it is not printed twice.
+			end := config.ContextSuggestion(cfg, contextName)
+			if end == "" {
+				end = "."
+			}
+			fmt.Fprintf(os.Stderr, "Context %q not found%s\n\n", contextName, end)
 
-			if len(contexts) == 0 {
+			if len(cfg.Contexts) == 0 {
 				fmt.Fprintln(os.Stderr, "No contexts configured. Add one with:")
 				fmt.Fprintln(os.Stderr, "  cml use add aws:prod --profile <profile> --region <region>")
 				fmt.Fprintln(os.Stderr, "  cml use add gcp:prod --project <project-id> --region <region>")
 			} else {
 				fmt.Fprintln(os.Stderr, "Available contexts:")
-				for name := range contexts {
+				for name := range cfg.Contexts {
 					marker := "  "
-					if name == current {
+					if name == cfg.CurrentContext {
 						marker = "* "
 					}
 					fmt.Fprintf(os.Stderr, "  %s%s\n", marker, name)
 				}
 			}
+			// Alias-resolved bare sentinel: today's error text, without a
+			// second copy of the suggestion.
+			return fmt.Errorf("%w: %q", config.ErrContextNotFound, config.ResolveAliasFrom(cfg, contextName))
 		}
 		// Return the error so the exit code is 1; a failed switch must not
 		// silently leave later commands running in the previous context.
@@ -258,7 +267,7 @@ func runUseUpdate(cmd *cobra.Command, args []string) error {
 	}
 	ctx, ok := cfg.Contexts[contextName]
 	if !ok {
-		return fmt.Errorf("context %q not found — use 'cml use add' to create it", contextName)
+		return fmt.Errorf("context %q not found%s — use 'cml use add' to create it", contextName, config.ContextSuggestion(cfg, contextName))
 	}
 
 	changed := func(name string) bool { return cmd.Flags().Changed(name) }
@@ -319,6 +328,11 @@ func runUseDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := config.DeleteContext(contextName); err != nil {
+		// The not-found error already says what to do; wrapping it would
+		// only bury the suggestion.
+		if errors.Is(err, config.ErrContextNotFound) {
+			return err
+		}
 		return fmt.Errorf("failed to delete context: %w", err)
 	}
 

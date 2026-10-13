@@ -16,7 +16,7 @@ func ResolveContext(contextFlag string) (*Context, string, error) {
 		name := ResolveAliasFrom(cfg, contextFlag)
 		ctxConfig, ok := cfg.Contexts[name]
 		if !ok {
-			return nil, "", fmt.Errorf("context %q not found — run 'cml contexts' to list configured contexts", name)
+			return nil, "", contextNotFound(cfg, name)
 		}
 		return ctxConfig, name, nil
 	}
@@ -26,7 +26,16 @@ func ResolveContext(contextFlag string) (*Context, string, error) {
 	}
 	ctxConfig, ok := cfg.Contexts[cfg.CurrentContext]
 	if !ok {
-		return nil, "", fmt.Errorf("context %q not found — run 'cml contexts' to list configured contexts", cfg.CurrentContext)
+		return nil, "", contextNotFound(cfg, cfg.CurrentContext)
 	}
 	return ctxConfig, cfg.CurrentContext, nil
+}
+
+// contextNotFound suggests close names when there are any, else points at
+// 'cml contexts'.
+func contextNotFound(cfg *CMLConfig, name string) error {
+	if s := ContextSuggestion(cfg, name); s != "" {
+		return fmt.Errorf("context %q not found%s", name, s)
+	}
+	return fmt.Errorf("context %q not found — run 'cml contexts' to list configured contexts", name)
 }

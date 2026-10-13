@@ -35,7 +35,7 @@ func AddAlias(cfg *CMLConfig, name, target string, force bool) error {
 		return fmt.Errorf("alias %q would shadow an existing context name", name)
 	}
 	if _, ok := cfg.Contexts[target]; !ok {
-		return fmt.Errorf("context %q not found — alias targets must be real context names", target)
+		return fmt.Errorf("context %q not found%s — alias targets must be real context names", target, suggestSuffix(target, contextNames(cfg)))
 	}
 	if _, exists := cfg.Aliases[name]; exists && !force {
 		return fmt.Errorf("alias %q already exists — pass --force to overwrite", name)
@@ -50,10 +50,19 @@ func AddAlias(cfg *CMLConfig, name, target string, force bool) error {
 // RemoveAlias deletes name from cfg.Aliases.
 func RemoveAlias(cfg *CMLConfig, name string) error {
 	if _, ok := cfg.Aliases[name]; !ok {
-		return fmt.Errorf("%w: %q", ErrAliasNotFound, name)
+		return fmt.Errorf("%w: %q%s", ErrAliasNotFound, name, suggestSuffix(name, aliasCandidates(cfg)))
 	}
 	delete(cfg.Aliases, name)
 	return nil
+}
+
+// aliasCandidates returns the configured alias names.
+func aliasCandidates(cfg *CMLConfig) []string {
+	names := make([]string, 0, len(cfg.Aliases))
+	for name := range cfg.Aliases {
+		names = append(names, name)
+	}
+	return names
 }
 
 // DanglingAliases returns the aliases whose target context no longer exists,

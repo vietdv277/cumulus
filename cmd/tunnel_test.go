@@ -139,6 +139,41 @@ func TestTunnelStartUnknownTunnel(t *testing.T) {
 	}
 }
 
+func TestTunnelStartUnknownTunnelSuggests(t *testing.T) {
+	setTestConfig(t, tunnelTestConfigYAML)
+
+	err := runTunnelStart(tunnelStartCmd, []string{"db-stg2"})
+	if err == nil {
+		t.Fatal("expected error for an unknown tunnel")
+	}
+	want := `tunnel "db-stg2" not found — did you mean "db-stg"?`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestTunnelRmUnknownTunnelSuggests(t *testing.T) {
+	setTestConfig(t, tunnelTestConfigYAML)
+
+	err := runTunnelRm(tunnelRmCmd, []string{"db-stg2"})
+	if err == nil {
+		t.Fatal("expected error for an unknown tunnel")
+	}
+	want := `tunnel "db-stg2" not found — did you mean "db-stg"?`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+
+	err = runTunnelRm(tunnelRmCmd, []string{"zzzzzz"})
+	if err == nil {
+		t.Fatal("expected error for an unknown tunnel")
+	}
+	want = `tunnel "zzzzzz" not found`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestVMSaveOverwriteGuardFailsBeforeProvider(t *testing.T) {
 	setTestConfig(t, tunnelTestConfigYAML)
 

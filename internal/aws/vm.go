@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
+	"github.com/vietdv277/cumulus/internal/suggest"
 	"github.com/vietdv277/cumulus/pkg/provider"
 	"github.com/vietdv277/cumulus/pkg/types"
 )
@@ -155,9 +156,54 @@ func (p *AWSVMProvider) Get(ctx context.Context, nameOrID string) (*types.VM, er
 
 	vm, err := selectInstance(matches, nameOrID)
 	if err != nil {
+		if len(matches) == 0 {
+			// Best effort: one listing of non-terminated names to suggest
+			// from; a failed listing must not mask the not-found.
+			if names, listErr := p.listInstanceNames(ctx); listErr == nil {
+				return nil, instanceNotFound(nameOrID, names)
+			}
+		}
 		return nil, err
 	}
 	return vm, nil
+}
+
+// listInstanceNames returns the names of non-terminated instances for
+// not-found suggestions. Best effort: the caller keeps today's plain
+// not-found message when this errors.
+func (p *AWSVMProvider) listInstanceNames(ctx context.Context) ([]string, error) {
+	input := &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("instance-state-name"),
+				Values: []string{"pending", "running", "stopping", "stopped"},
+			},
+		},
+	}
+
+	var names []string
+	paginator := ec2.NewDescribeInstancesPaginator(p.client.EC2(), input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe instances: %w", err)
+		}
+		for _, reservation := range page.Reservations {
+			for _, inst := range reservation.Instances {
+				names = append(names, ec2ToVM(inst).Name)
+			}
+		}
+	}
+	return names, nil
+}
+
+// instanceNotFound builds the not-found error for a name lookup, suggesting
+// close instance names when any exist.
+func instanceNotFound(name string, names []string) error {
+	if hint := suggest.DidYouMean(suggest.Similar(name, names, 3)); hint != "" {
+		return fmt.Errorf("instance not found: %s — %s", name, hint)
+	}
+	return fmt.Errorf("instance not found: %s", name)
 }
 
 // Start starts an EC2 instance

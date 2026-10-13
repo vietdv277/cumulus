@@ -27,6 +27,83 @@ const resolveTestNoCurrentYAML = `contexts:
     region: us-east-1
 `
 
+// suggestTestYAML has contexts, aliases and tunnels close enough to typical
+// typos to exercise the "did you mean" suffixes.
+const suggestTestYAML = `current_context: aws:prod
+contexts:
+  aws:prod:
+    provider: aws
+    profile: prod-sso
+    region: us-east-1
+  gcp:staging:
+    provider: gcp
+    project: my-project
+    region: asia-southeast1
+aliases:
+  prod: aws:prod
+  stg: gcp:staging
+tunnels:
+  db-prod:
+    context: aws:prod
+    target: i-0db123
+    remote_port: 5432
+    local_port: 5432
+  web-ssh:
+    context: aws:prod
+    target: i-0web123
+    remote_port: 22
+    local_port: 2222
+`
+
+func TestResolveContextSuggestions(t *testing.T) {
+	t.Run("flag typo suggests contexts and aliases", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		_, _, err := ResolveContext("prdo")
+		if err == nil {
+			t.Fatal("expected error for unknown context flag")
+		}
+		want := `context "prdo" not found — did you mean "aws:prod" or "prod"?`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("flag typo without close match keeps today's text", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		_, _, err := ResolveContext("zzzzzz")
+		if err == nil {
+			t.Fatal("expected error for unknown context flag")
+		}
+		want := `context "zzzzzz" not found — run 'cml contexts' to list configured contexts`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("stale current context suggests", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), `current_context: aws:prd
+contexts:
+  aws:prod:
+    provider: aws
+    profile: prod-sso
+`, 0600)
+
+		_, _, err := ResolveContext("")
+		if err == nil {
+			t.Fatal("expected error for a stale current context")
+		}
+		want := `context "aws:prd" not found — did you mean "aws:prod"?`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+}
+
 func TestResolveContext(t *testing.T) {
 	tests := []struct {
 		name        string
