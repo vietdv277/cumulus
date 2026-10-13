@@ -107,6 +107,18 @@ func TestHints(t *testing.T) {
 			env:  gcpEnv,
 			want: []string{`GCP Application Default Credentials are expired or missing — run 'gcloud auth application-default login'`},
 		},
+		{
+			name: "aws credential markers do not fire for a gcp context",
+			err:  errors.New("operation error EC2: DescribeInstances, failed to retrieve credentials, token has expired"),
+			env:  gcpEnv,
+			want: nil,
+		},
+		{
+			name: "gcp credential marker does not fire for an aws context",
+			err:  errors.New("could not find default credentials"),
+			env:  awsEnv,
+			want: nil,
+		},
 
 		// 3. AWS permission denied.
 		{
@@ -133,7 +145,7 @@ func TestHints(t *testing.T) {
 				},
 			}),
 			env:  Env{Provider: "aws"},
-			want: []string{`the current AWS credentials are not allowed to call ec2:DescribeInstances — check its IAM policy or use another context`},
+			want: []string{`the current AWS credentials are not allowed to call ec2:DescribeInstances — check their IAM policy or use another context`},
 		},
 		{
 			name: "action falls back to operation without message action",
@@ -164,7 +176,7 @@ func TestHints(t *testing.T) {
 			env: awsEnv,
 			want: []string{
 				`profile "dev" is not allowed to call ec2:StartInstances — check its IAM policy or use another context`,
-				`decode the details with 'aws sts decode-authorization-message --encoded-message wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'`,
+				`decode the details with 'aws sts decode-authorization-message --encoded-message <encoded-message>'`,
 			},
 		},
 
@@ -233,13 +245,22 @@ func TestHints(t *testing.T) {
 			want: []string{`the GCP credentials lack compute.instances.get on project "example-project" — grant it or use another context`},
 		},
 		{
-			name: "permission falls back to this operation",
+			name: "permission without a name stays generic",
 			err: fmt.Errorf("get vm: %w", &googleapi.Error{
 				Code:    403,
 				Message: "The caller does not have permission",
 			}),
 			env:  gcpEnv,
-			want: []string{`the GCP credentials lack this operation on project "example-project" — grant it or use another context`},
+			want: []string{`the GCP credentials are not allowed to perform this operation on project "example-project" — grant access or use another context`},
+		},
+		{
+			name: "generic permission with empty project drops the project",
+			err: fmt.Errorf("get vm: %w", &googleapi.Error{
+				Code:    403,
+				Message: "The caller does not have permission",
+			}),
+			env:  Env{Provider: "gcp"},
+			want: []string{`the GCP credentials are not allowed to perform this operation — grant access or use another context`},
 		},
 		{
 			name: "permission with empty project drops the project",
@@ -265,6 +286,29 @@ func TestHints(t *testing.T) {
 				Err: &smithy.GenericAPIError{Code: "InvalidInstanceID.NotFound", Message: "The instance ID 'i-abc123' does not exist"},
 			}),
 			env:  awsEnv,
+			want: nil,
+		},
+		{
+			name: "gcp 403 rate limit gets no hint",
+			err: fmt.Errorf("list vms: %w", &googleapi.Error{
+				Code:    403,
+				Message: "Rate Limit Exceeded. The rate limit for the project has been reached.",
+				Errors:  []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}},
+			}),
+			env:  gcpEnv,
+			want: nil,
+		},
+		{
+			name: "gcp 403 resource exhausted gets no hint",
+			err: fmt.Errorf("list vms: %w", &googleapi.Error{
+				Code: 403,
+				Details: []any{map[string]any{
+					"@type":    "type.googleapis.com/google.rpc.ErrorInfo",
+					"reason":   "RESOURCE_EXHAUSTED",
+					"metadata": map[string]any{"service": "compute.googleapis.com"},
+				}},
+			}),
+			env:  gcpEnv,
 			want: nil,
 		},
 		{

@@ -75,7 +75,8 @@ func awsCredentialHints(err error, env Env) []string {
 	if errors.As(err, &apiErr) && awsExpiredTokenCodes[apiErr.ErrorCode()] {
 		return []string{awsLoginHint(env.Profile)}
 	}
-	if containsAny(strings.ToLower(err.Error()), awsCredentialMarkers) {
+	// Message text alone is too generic to trust outside an AWS context.
+	if env.Provider != "gcp" && containsAny(strings.ToLower(err.Error()), awsCredentialMarkers) {
 		return []string{awsLoginHint(env.Profile)}
 	}
 	return nil
@@ -93,7 +94,7 @@ func awsLoginHint(profile string) string {
 const gcpLoginHint = "GCP Application Default Credentials are expired or missing — run 'gcloud auth application-default login'"
 
 // gcpCredentialHints classifies expired or missing GCP credentials.
-func gcpCredentialHints(err error, _ Env) []string {
+func gcpCredentialHints(err error, env Env) []string {
 	var retrieve *oauth2.RetrieveError
 	if errors.As(err, &retrieve) {
 		return []string{gcpLoginHint}
@@ -102,7 +103,8 @@ func gcpCredentialHints(err error, _ Env) []string {
 	if errors.As(err, &gErr) && gErr.Code == 401 {
 		return []string{gcpLoginHint}
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "could not find default credentials") {
+	// Message text alone is too generic to trust outside a GCP context.
+	if env.Provider != "aws" && strings.Contains(strings.ToLower(err.Error()), "could not find default credentials") {
 		return []string{gcpLoginHint}
 	}
 	return nil
@@ -123,9 +125,10 @@ var awsDeniedCodes = map[string]bool{
 // ("... is not authorized to perform: ec2:DescribeInstances ...").
 var iamActionRe = regexp.MustCompile(`not authorized to perform: ([a-z0-9-]+:[A-Za-z0-9*]+)`)
 
-// encodedFailureRe extracts the encoded authorization failure message that
-// AWS appends to some denials.
-var encodedFailureRe = regexp.MustCompile(`Encoded authorization failure message: ([A-Za-z0-9+/=_%-]+)`)
+// awsDecodeHint points at the encoded authorization failure message AWS
+// appends to some denials so it can be decoded. The blob itself is not
+// repeated: it is already in the error line and can be ~2 KB.
+const awsDecodeHint = "decode the details with 'aws sts decode-authorization-message --encoded-message <encoded-message>'"
 
 // awsPermissionHints classifies IAM denials.
 func awsPermissionHints(err error, env Env) []string {
@@ -135,7 +138,7 @@ func awsPermissionHints(err error, env Env) []string {
 	}
 	hints := []string{awsDeniedHint(env.Profile, awsAction(err))}
 	if strings.Contains(strings.ToLower(err.Error()), "encoded authorization failure message") {
-		hints = append(hints, decodeHint(err))
+		hints = append(hints, awsDecodeHint)
 	}
 	return hints
 }
@@ -157,22 +160,14 @@ func awsAction(err error) string {
 // awsDeniedHint names the profile that was denied.
 func awsDeniedHint(profile, action string) string {
 	if profile == "" {
-		return fmt.Sprintf("the current AWS credentials are not allowed to call %s — check its IAM policy or use another context", action)
+		return fmt.Sprintf("the current AWS credentials are not allowed to call %s — check their IAM policy or use another context", action)
 	}
 	return fmt.Sprintf("profile %q is not allowed to call %s — check its IAM policy or use another context", profile, action)
 }
 
-// decodeHint points at the encoded authorization failure message so it can be
-// decoded; the blob is quoted when the message carries one.
-func decodeHint(err error) string {
-	if m := encodedFailureRe.FindStringSubmatch(err.Error()); m != nil {
-		return fmt.Sprintf("decode the details with 'aws sts decode-authorization-message --encoded-message %s'", m[1])
-	}
-	return "decode the details with 'aws sts decode-authorization-message --encoded-message <message>'"
-}
-
 // gcpPermissionHints classifies GCP 403s: a disabled API or a missing
-// permission.
+// permission. Quota and rate-limit 403s are not permission problems and get
+// no hint.
 func gcpPermissionHints(err error, env Env) []string {
 	var gErr *googleapi.Error
 	if !errors.As(err, &gErr) || gErr.Code != 403 {
@@ -181,6 +176,9 @@ func gcpPermissionHints(err error, env Env) []string {
 	info := errorInfo(gErr)
 	if gcpDisabled(gErr, info) {
 		return []string{gcpDisabledHint(info, env.Project)}
+	}
+	if gcpQuotaLimited(gErr, info) {
+		return nil
 	}
 	return []string{gcpPermissionHint(err, info, env.Project)}
 }
@@ -208,6 +206,30 @@ func gcpDisabled(gErr *googleapi.Error, info map[string]any) bool {
 	}
 	for _, item := range gErr.Errors {
 		if item.Reason == "SERVICE_DISABLED" || item.Reason == "accessNotConfigured" {
+			return true
+		}
+	}
+	return false
+}
+
+// gcpQuotaReasons are ErrorInfo / Errors[].Reason values that mean a quota or
+// rate limit was hit, not a missing permission.
+var gcpQuotaReasons = map[string]bool{
+	"rateLimitExceeded":     true,
+	"userRateLimitExceeded": true,
+	"quotaExceeded":         true,
+	"dailyLimitExceeded":    true,
+	"RATE_LIMIT_EXCEEDED":   true,
+	"RESOURCE_EXHAUSTED":    true,
+}
+
+// gcpQuotaLimited reports whether a 403 is a quota or rate limit.
+func gcpQuotaLimited(gErr *googleapi.Error, info map[string]any) bool {
+	if reason, _ := info["reason"].(string); gcpQuotaReasons[reason] {
+		return true
+	}
+	for _, item := range gErr.Errors {
+		if gcpQuotaReasons[item.Reason] {
 			return true
 		}
 	}
@@ -242,7 +264,7 @@ func gcpDisabledHint(info map[string]any, project string) string {
 var gcpPermissionRe = regexp.MustCompile(`[Pp]ermission ['"]?([a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+){2,})['"]?`)
 
 // gcpPermissionHint names the missing GCP permission: from the ErrorInfo
-// metadata, else the message, else a generic one.
+// metadata, else the message; without one the hint stays generic.
 func gcpPermissionHint(err error, info map[string]any, project string) string {
 	metadata, _ := info["metadata"].(map[string]any)
 	permission, _ := metadata["permission"].(string)
@@ -251,12 +273,12 @@ func gcpPermissionHint(err error, info map[string]any, project string) string {
 			permission = m[1]
 		}
 	}
-	if permission == "" {
-		permission = "this operation"
-	}
 	onProject := ""
 	if project != "" {
 		onProject = fmt.Sprintf(" on project %q", project)
+	}
+	if permission == "" {
+		return fmt.Sprintf("the GCP credentials are not allowed to perform this operation%s — grant access or use another context", onProject)
 	}
 	return fmt.Sprintf("the GCP credentials lack %s%s — grant it or use another context", permission, onProject)
 }
