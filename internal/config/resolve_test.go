@@ -64,7 +64,7 @@ func TestResolveContextSuggestions(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for unknown context flag")
 		}
-		want := `context "prdo" not found — did you mean "aws:prod" or "prod"? — run 'cml contexts' to list configured contexts`
+		want := `context "prdo" not found — did you mean "aws:prod" or "prod"?`
 		if err.Error() != want {
 			t.Fatalf("error = %q, want %q", err.Error(), want)
 		}
@@ -97,7 +97,7 @@ contexts:
 		if err == nil {
 			t.Fatal("expected error for a stale current context")
 		}
-		want := `context "aws:prd" not found — did you mean "aws:prod"? — run 'cml contexts' to list configured contexts`
+		want := `context "aws:prd" not found — did you mean "aws:prod"?`
 		if err.Error() != want {
 			t.Fatalf("error = %q, want %q", err.Error(), want)
 		}
