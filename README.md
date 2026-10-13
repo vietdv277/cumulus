@@ -238,6 +238,37 @@ and a fix hint per check. `-o json|yaml` emits
 `[{check, status, detail, hint}]` with `status` one of `ok|warn|fail`.
 The exit code is 1 when any check fails — warnings do not fail.
 
+## Errors and hints
+
+Errors print once as `Error: …`. When the cause is recognisable, `Hint:` lines
+follow with the fix:
+
+```text
+Error: failed to describe instances: operation error EC2: DescribeInstances, get identity: get credentials: failed to refresh cached credentials, …
+Hint: AWS credentials for profile "prod-sso" are expired or missing — run 'aws sso login --profile prod-sso'
+```
+
+- expired or missing credentials: `aws sso login --profile <p>` (AWS) or
+  `gcloud auth application-default login` (GCP)
+- permission denied: the IAM action or GCP permission that was denied, when the
+  API names it
+- a disabled GCP API: the `gcloud services enable …` command
+
+Mistyped names get suggestions:
+
+```text
+$ cml vm list --context stagin
+Error: context "stagin" not found — did you mean "gcp:staging"?
+```
+
+This covers contexts, aliases, saved tunnels and VM names.
+
+Transient failures: the AWS SDK retries throttling and server errors (3
+attempts, exponential backoff up to 20s). On GCP, Compute Engine reads
+(`vm list/get`) retry on 503/504. The other GCP services (Secret Manager,
+Cloud SQL Admin, Cloud Logging, GKE, Cloud Storage listing) do not retry, so
+re-run the command after a transient GCP error.
+
 ## Output formats
 
 Data-printing commands accept a global `--output table|json|yaml` flag (`-o`): `vm list/get`,

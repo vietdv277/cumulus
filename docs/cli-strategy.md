@@ -537,13 +537,14 @@ SecretValue
 
 #### Error handling — v0.12.0
 
-- [ ] Auth failures: detect an expired SSO session or missing ADC on every command and print the fix
-  (`aws sso login --profile <p>`, `gcloud auth application-default login`); only `status` and
-  `doctor` do this today
-- [ ] Not found: suggest close matches for contexts, aliases, saved tunnels and VM names
-- [ ] Permission denied: name the denied action from the API error
-- [ ] Network errors: document the SDK retry defaults (AWS standard retryer, GCP API clients) instead
-  of adding a second retry layer
+- [x] Auth failures: detect an expired SSO session or missing ADC on every command and print the fix
+  (`aws sso login --profile <p>`, `gcloud auth application-default login`) — `internal/errhint`
+- [x] Not found: suggest close matches for contexts, aliases, saved tunnels and VM names —
+  `internal/suggest`
+- [x] Permission denied: name the denied action from the API error
+- [x] Network errors: document the SDK retry defaults instead of adding a second retry layer. The AWS
+  standard retryer and Compute Engine reads retry; the `google.golang.org/api` REST clients do not
+  (see the backlog)
 
 #### Documentation — v0.12.0
 
@@ -559,6 +560,8 @@ SecretValue
 
 ### Backlog — unscheduled
 
+- Retry idempotent GCP REST reads (Secret Manager, Cloud SQL Admin, Cloud Logging, GKE, Cloud
+  Storage listing) on 429/5xx; these clients have no built-in retry
 - `--output wide`
 - `secrets get --decode/--copy` (only `aws ssm param get --decode` exists)
 - `cml aws sts assume-role`
@@ -600,10 +603,10 @@ No changes required to unified commands or models.
 
 | Error Type | Handling |
 |------------|----------|
-| Auth failure | Clear message with fix instructions |
-| Resource not found | Suggest similar names |
-| Permission denied | Show required permissions |
-| Network error | Retry with backoff |
+| Auth failure | `Hint:` with the login command (`aws sso login --profile <p>`, `gcloud auth application-default login`) |
+| Resource not found | "did you mean" suggestions for contexts, aliases, saved tunnels and VM names |
+| Permission denied | `Hint:` naming the denied IAM action / GCP permission when the API reports it |
+| Network error | SDK retries: AWS standard retryer (3 attempts, backoff ≤ 20s); Compute Engine reads on 503/504; other GCP REST clients do not retry |
 | Unsupported feature | Clear "not supported for GCP" error with alternative |
 
 ---
