@@ -151,6 +151,32 @@ func TestRunAliasRm(t *testing.T) {
 	})
 }
 
+func TestRunAliasAddTargetSuggestion(t *testing.T) {
+	setTestConfig(t, aliasTestYAML)
+
+	err := runAliasAdd(aliasAddCmd, []string{"x", "aws:prd"})
+	if err == nil {
+		t.Fatal("expected error for an unknown target context")
+	}
+	want := `context "aws:prd" not found — did you mean "aws:prod"? — alias targets must be real context names`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRunAliasRmSuggestion(t *testing.T) {
+	setTestConfig(t, aliasTestYAML)
+
+	err := runAliasRm(aliasRmCmd, []string{"stg2"})
+	if !errors.Is(err, config.ErrAliasNotFound) {
+		t.Fatalf("err = %v, want errors.Is(err, config.ErrAliasNotFound)", err)
+	}
+	want := `alias not found: "stg2" — did you mean "stg"?`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestRunAliasListTable(t *testing.T) {
 	setTestConfig(t, aliasDanglingYAML)
 

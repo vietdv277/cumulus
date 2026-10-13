@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/vietdv277/cumulus/internal/suggest"
 )
 
 // ErrContextNotFound is returned when a named context does not exist.
@@ -191,7 +193,7 @@ func GetCurrentContext() (*Context, string, error) {
 
 	ctx, ok := cfg.Contexts[cfg.CurrentContext]
 	if !ok {
-		return nil, "", fmt.Errorf("context %q not found", cfg.CurrentContext)
+		return nil, "", fmt.Errorf("context %q not found%s", cfg.CurrentContext, ContextSuggestion(cfg, cfg.CurrentContext))
 	}
 
 	return ctx, cfg.CurrentContext, nil
@@ -208,7 +210,7 @@ func SetCurrentContext(name string) error {
 
 	// Validate context exists
 	if _, ok := cfg.Contexts[name]; !ok {
-		return fmt.Errorf("%w: %q", ErrContextNotFound, name)
+		return fmt.Errorf("%w: %q%s", ErrContextNotFound, name, ContextSuggestion(cfg, name))
 	}
 
 	cfg.CurrentContext = name
@@ -282,6 +284,41 @@ func ResolveAliasFrom(cfg *CMLConfig, alias string) string {
 	return alias
 }
 
+// suggestSuffix formats the "did you mean" clause with its leading em dash,
+// or "" when no candidate is close enough to suggest.
+func suggestSuffix(name string, candidates []string) string {
+	if hint := suggest.DidYouMean(suggest.Similar(name, candidates, 3)); hint != "" {
+		return " — " + hint
+	}
+	return ""
+}
+
+// ContextSuggestion returns the " — did you mean ...?" suffix for a context or
+// alias name that matched nothing, or "" when no configured name is close.
+// Exported because cmd builds some not-found errors itself.
+func ContextSuggestion(cfg *CMLConfig, name string) string {
+	return suggestSuffix(name, contextCandidates(cfg))
+}
+
+// contextNames returns the configured context names.
+func contextNames(cfg *CMLConfig) []string {
+	names := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		names = append(names, name)
+	}
+	return names
+}
+
+// contextCandidates returns every name a context lookup could have meant:
+// context names plus alias names.
+func contextCandidates(cfg *CMLConfig) []string {
+	names := contextNames(cfg)
+	for name := range cfg.Aliases {
+		names = append(names, name)
+	}
+	return names
+}
+
 // GetTunnelConfig returns a saved tunnel configuration
 func GetTunnelConfig(name string) (*TunnelConfig, error) {
 	cfg, err := LoadCMLConfig()
@@ -291,7 +328,7 @@ func GetTunnelConfig(name string) (*TunnelConfig, error) {
 
 	tunnel, ok := cfg.Tunnels[name]
 	if !ok {
-		return nil, fmt.Errorf("tunnel %q not found", name)
+		return nil, fmt.Errorf("tunnel %q not found%s", name, suggestSuffix(name, tunnelCandidates(cfg)))
 	}
 
 	return tunnel, nil

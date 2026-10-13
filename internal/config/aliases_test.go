@@ -119,6 +119,62 @@ func TestRemoveAlias(t *testing.T) {
 	})
 }
 
+func TestAddAliasSuggestions(t *testing.T) {
+	t.Run("typo in target suggests context names", func(t *testing.T) {
+		cfg := aliasTestCfg()
+
+		err := AddAlias(cfg, "x", "aws:prd", false)
+		if err == nil {
+			t.Fatal("expected error for an unknown target context")
+		}
+		want := `context "aws:prd" not found — did you mean "aws:prod"? — alias targets must be real context names`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("no close match keeps today's text", func(t *testing.T) {
+		cfg := aliasTestCfg()
+
+		err := AddAlias(cfg, "x", "zzzzzz", false)
+		if err == nil {
+			t.Fatal("expected error for an unknown target context")
+		}
+		want := `context "zzzzzz" not found — alias targets must be real context names`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+}
+
+func TestRemoveAliasSuggestions(t *testing.T) {
+	t.Run("typo suggests alias names", func(t *testing.T) {
+		cfg := aliasTestCfg()
+
+		err := RemoveAlias(cfg, "oldd")
+		if !errors.Is(err, ErrAliasNotFound) {
+			t.Fatalf("err = %v, want errors.Is(err, ErrAliasNotFound)", err)
+		}
+		want := `alias not found: "oldd" — did you mean "old"?`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("no close match keeps today's text", func(t *testing.T) {
+		cfg := aliasTestCfg()
+
+		err := RemoveAlias(cfg, "zzzzzz")
+		if !errors.Is(err, ErrAliasNotFound) {
+			t.Fatalf("err = %v, want errors.Is(err, ErrAliasNotFound)", err)
+		}
+		want := `alias not found: "zzzzzz"`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+}
+
 func TestDanglingAliases(t *testing.T) {
 	cfg := &CMLConfig{
 		Contexts: map[string]*Context{"aws:prod": {Provider: "aws"}},

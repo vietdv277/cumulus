@@ -43,10 +43,19 @@ func DeleteTunnel(name string) error {
 		return err
 	}
 	if _, ok := cfg.Tunnels[name]; !ok {
-		return fmt.Errorf("tunnel %q not found", name)
+		return fmt.Errorf("tunnel %q not found%s", name, suggestSuffix(name, tunnelCandidates(cfg)))
 	}
 	delete(cfg.Tunnels, name)
 	return SaveCMLConfig(cfg)
+}
+
+// tunnelCandidates returns the saved tunnel names.
+func tunnelCandidates(cfg *CMLConfig) []string {
+	names := make([]string, 0, len(cfg.Tunnels))
+	for name := range cfg.Tunnels {
+		names = append(names, name)
+	}
+	return names
 }
 
 // ListTunnels returns every saved tunnel configuration keyed by name, plus

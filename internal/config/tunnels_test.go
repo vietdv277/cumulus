@@ -49,6 +49,36 @@ func TestTunnelSaveListDeleteRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDeleteTunnelSuggestions(t *testing.T) {
+	t.Run("typo suggests tunnel names", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		err := DeleteTunnel("db-prd")
+		if err == nil {
+			t.Fatal("expected error deleting an unknown tunnel")
+		}
+		want := `tunnel "db-prd" not found — did you mean "db-prod"?`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("no close match keeps today's text", func(t *testing.T) {
+		isolateHome(t)
+		writeTestFile(t, GetCMLConfigPath(), suggestTestYAML, 0600)
+
+		err := DeleteTunnel("zzzzzz")
+		if err == nil {
+			t.Fatal("expected error deleting an unknown tunnel")
+		}
+		want := `tunnel "zzzzzz" not found`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+}
+
 func TestSaveTunnelOverwriteGuard(t *testing.T) {
 	isolateHome(t)
 
