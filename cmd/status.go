@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/errhint"
 	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
@@ -148,8 +150,8 @@ func displayAWSStatus(cctx context.Context, ctx *config.Context) {
 		fmt.Println(ui.StoppedStyle.Render("✗ Not authenticated"))
 		fmt.Printf("          %s\n", ui.MutedStyle.Render(err.Error()))
 		fmt.Println()
-		fmt.Println("To authenticate:")
-		fmt.Printf("  aws sso login --profile %s\n", ctx.Profile)
+		printAuthHints(err, errhint.Env{Provider: "aws", Profile: ctx.Profile},
+			"aws sso login --profile "+ctx.Profile)
 	} else {
 		fmt.Println(ui.RunningStyle.Render("✓ Authenticated"))
 		fmt.Printf("Account:  %s\n", identity.Account)
@@ -173,8 +175,8 @@ func displayGCPStatus(cctx context.Context, ctx *config.Context) {
 		fmt.Println(ui.StoppedStyle.Render("✗ Not authenticated"))
 		fmt.Printf("          %s\n", ui.MutedStyle.Render(err.Error()))
 		fmt.Println()
-		fmt.Println("To authenticate:")
-		fmt.Println("  gcloud auth application-default login")
+		printAuthHints(err, errhint.Env{Provider: "gcp", Project: ctx.Project},
+			"gcloud auth application-default login")
 	} else {
 		fmt.Println(ui.RunningStyle.Render("✓ Authenticated (ADC)"))
 		if identity.Email != "" {
@@ -186,6 +188,26 @@ func displayGCPStatus(cctx context.Context, ctx *config.Context) {
 		if identity.TokenType != "" {
 			fmt.Printf("Type:     %s\n", ui.MutedStyle.Render(identity.TokenType))
 		}
+	}
+}
+
+// printAuthHints prints recovery hints for a failed auth probe: credential
+// hints keep the "To authenticate:" wording, anything else is a plain fix.
+// Without hints the provider's login command stands.
+func printAuthHints(err error, env errhint.Env, fallback string) {
+	hints := errhint.Hints(err, env)
+	if len(hints) == 0 {
+		fmt.Println("To authenticate:")
+		fmt.Printf("  %s\n", fallback)
+		return
+	}
+	heading := "To fix:"
+	if strings.Contains(hints[0], "expired or missing") {
+		heading = "To authenticate:"
+	}
+	fmt.Println(heading)
+	for _, hint := range hints {
+		fmt.Printf("  %s\n", hint)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/vietdv277/cumulus/internal/aws"
 	"github.com/vietdv277/cumulus/internal/config"
+	"github.com/vietdv277/cumulus/internal/errhint"
 	"github.com/vietdv277/cumulus/internal/gcp"
 	"github.com/vietdv277/cumulus/internal/ui"
 )
@@ -441,6 +442,12 @@ func checkOnline(deps doctorDeps, ctx context.Context, cfg *config.CMLConfig) []
 	if !ok || ctxCfg == nil {
 		return nil
 	}
+	env := errhint.Env{
+		Provider: ctxCfg.Provider,
+		Context:  cfg.CurrentContext,
+		Profile:  ctxCfg.Profile,
+		Project:  ctxCfg.Project,
+	}
 
 	switch ctxCfg.Provider {
 	case "aws":
@@ -450,6 +457,9 @@ func checkOnline(deps doctorDeps, ctx context.Context, cfg *config.CMLConfig) []
 			c.Status = doctorFail
 			c.Detail = err.Error()
 			c.Hint = "aws sso login --profile " + ctxCfg.Profile
+			if hints := errhint.Hints(err, env); len(hints) > 0 {
+				c.Hint = hints[0]
+			}
 		} else {
 			c.Detail = fmt.Sprintf("STS GetCallerIdentity: %s", identity.Arn)
 		}
@@ -464,6 +474,9 @@ func checkOnline(deps doctorDeps, ctx context.Context, cfg *config.CMLConfig) []
 			c.Status = doctorFail
 			c.Detail = err.Error()
 			c.Hint = "gcloud auth application-default login"
+			if hints := errhint.Hints(err, env); len(hints) > 0 {
+				c.Hint = hints[0]
+			}
 		} else if identity.Email != "" {
 			c.Detail = fmt.Sprintf("GCP token fetch: %s", identity.Email)
 		}
