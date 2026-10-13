@@ -94,17 +94,31 @@ func TestPrintError(t *testing.T) {
 }
 
 func TestHintEnv(t *testing.T) {
-	t.Run("resolves the current context", func(t *testing.T) {
+	t.Run("legacy command without a context flag uses the profile", func(t *testing.T) {
 		setTestConfig(t, testConfigYAML)
 
-		env := hintEnv(rootCmd)
-		want := errhint.Env{Provider: "aws", Context: "aws:prod", Profile: "prod-sso"}
-		if env != want {
-			t.Fatalf("hintEnv(rootCmd) = %+v, want %+v", env, want)
+		old := profile
+		profile = "legacy"
+		t.Cleanup(func() { profile = old })
+
+		// rootCmd has no --context flag, so even with a config present the
+		// legacy profile stands.
+		if env := hintEnv(rootCmd); env != (errhint.Env{Profile: "legacy"}) {
+			t.Fatalf("hintEnv(rootCmd) = %+v, want the legacy profile", env)
 		}
 	})
 
-	t.Run("resolves the command's context flag", func(t *testing.T) {
+	t.Run("context flag resolves the current context", func(t *testing.T) {
+		setTestConfig(t, testConfigYAML)
+
+		env := hintEnv(vmCmd)
+		want := errhint.Env{Provider: "aws", Context: "aws:prod", Profile: "prod-sso"}
+		if env != want {
+			t.Fatalf("hintEnv(vmCmd) = %+v, want %+v", env, want)
+		}
+	})
+
+	t.Run("context flag resolves the flag value", func(t *testing.T) {
 		setTestConfig(t, testConfigYAML)
 
 		if err := vmCmd.PersistentFlags().Set("context", "gcp:staging"); err != nil {
@@ -119,17 +133,20 @@ func TestHintEnv(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to the legacy profile without a context", func(t *testing.T) {
-		// No config file: ResolveContext fails, so the legacy profile stands.
-		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-		t.Setenv("HOME", t.TempDir())
+	t.Run("unresolvable context falls back to the profile", func(t *testing.T) {
+		setTestConfig(t, testConfigYAML)
 
 		old := profile
 		profile = "legacy"
 		t.Cleanup(func() { profile = old })
 
-		if env := hintEnv(rootCmd); env != (errhint.Env{Profile: "legacy"}) {
-			t.Fatalf("hintEnv(rootCmd) = %+v, want the legacy profile", env)
+		if err := vmCmd.PersistentFlags().Set("context", "nosuch"); err != nil {
+			t.Fatalf("set context flag: %v", err)
+		}
+		t.Cleanup(func() { _ = vmCmd.PersistentFlags().Set("context", "") })
+
+		if env := hintEnv(vmCmd); env != (errhint.Env{Profile: "legacy"}) {
+			t.Fatalf("hintEnv(vmCmd) = %+v, want the legacy profile", env)
 		}
 	})
 }

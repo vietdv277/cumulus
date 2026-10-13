@@ -70,14 +70,15 @@ func printError(w io.Writer, err error, env errhint.Env) {
 }
 
 // hintEnv resolves the context the failing command ran against so hints can
-// name the right profile or project. It must never fail or print; without a
-// resolvable context it falls back to the legacy profile.
+// name the right profile or project. It must never fail or print. Commands
+// without a --context flag are legacy: they honour -p and the AWS context
+// profile via the package profile var and never resolve a context.
 func hintEnv(c *cobra.Command) errhint.Env {
-	value := ""
-	if f := c.Flag("context"); f != nil {
-		value = f.Value.String()
+	f := c.Flag("context")
+	if f == nil {
+		return errhint.Env{Profile: profile}
 	}
-	if ctxCfg, name, err := config.ResolveContext(value); err == nil && ctxCfg != nil {
+	if ctxCfg, name, err := config.ResolveContext(f.Value.String()); err == nil && ctxCfg != nil {
 		return errhint.Env{
 			Provider: ctxCfg.Provider,
 			Context:  name,
