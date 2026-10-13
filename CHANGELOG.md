@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Recovery hints: a failing command prints `Hint:` lines after the error for
+  expired or missing credentials (`aws sso login --profile <p>`,
+  `gcloud auth application-default login`), IAM denials (naming the denied
+  action when the API reports it), and disabled GCP APIs
+  (`gcloud services enable …`). `cml status` and `cml doctor --online` use
+  the same hints.
+- "Did you mean" suggestions when a context, alias, saved tunnel or VM name is
+  not found.
+
+### Fixed
+- `cml use delete <unknown>` exits 1 with a not-found error instead of
+  succeeding silently.
+
 ## [0.11.1] — 2026-10-12
 
 ### Fixed

@@ -310,6 +310,15 @@ cml
 - `rootCmd` silences cobra's error printing (`Execute` prints `Error: ...` once) and sets
   `SilenceUsage` in its `PersistentPreRun`, so usage prints only for flag and argument errors;
   a subcommand defining its own `PersistentPreRun` must keep that behaviour
+- Error hints: `Execute` passes the error to `errhint.Hints` (`internal/errhint`), which
+  classifies by error type/API code first and message text only for the matching provider;
+  return nil rather than a wrong hint. Keep SDK errors wrapped with `%w` so the types survive
+- Not-found errors for user-typed names append `suggest.DidYouMean(suggest.Similar(name,
+  candidates, 3))` (`internal/suggest`; contexts via `config.ContextSuggestion`) and keep any
+  sentinel (`ErrContextNotFound`, `ErrAliasNotFound`) wrapped
+- Retries: the AWS SDK standard retryer (3 attempts) and the Compute Engine client (reads on
+  503/504) retry on their own; the `google.golang.org/api` REST clients do not. Do not add a
+  second retry layer on AWS
 - Data-printing commands route through `render` (`cmd/output.go` → `internal/output`); with
   json/yaml, stdout carries only the document and empty results print `[]`
 
