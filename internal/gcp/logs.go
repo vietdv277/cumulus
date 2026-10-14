@@ -24,6 +24,13 @@ const (
 	providerGCPLogs  = "gcp"
 )
 
+// A tail poll failing with a transient error is retried with a doubling wait,
+// capped at maxPollBackoff; maxPollFailures in a row end the tail.
+const (
+	maxPollBackoff  = time.Minute
+	maxPollFailures = 5
+)
+
 // errPagesDone stops pagination once the query limit is reached.
 var errPagesDone = errors.New("pages done")
 
@@ -101,6 +108,8 @@ func (p *GCPLogsProvider) Query(ctx context.Context, target string, opts *provid
 
 // Tail emits the same initial window as Query, then polls for newer entries
 // every opts.PollInterval (default 2s) until ctx is cancelled or emit fails.
+// A poll hitting a rate limit or a brief outage backs off and retries instead
+// of ending the tail.
 // Entries are never emitted twice: dedupe is by insertId, which also keeps
 // later entries that share the newest timestamp.
 func (p *GCPLogsProvider) Tail(ctx context.Context, target string, opts *provider.LogsOptions, emit func(types.LogEntry) error) error {
@@ -126,9 +135,10 @@ func (p *GCPLogsProvider) Tail(ctx context.Context, target string, opts *provide
 		}
 	}
 
+	wait, failures := interval, 0
 	for {
 		// Cancellation ends the tail cleanly; any other sleep failure stops it too.
-		if err := p.sleep(ctx, interval); err != nil {
+		if err := p.sleep(ctx, wait); err != nil {
 			return nil
 		}
 		// Re-query from the newest timestamp so entries sharing it but with a
@@ -139,8 +149,14 @@ func (p *GCPLogsProvider) Tail(ctx context.Context, target string, opts *provide
 		}
 		fresh, err := p.readEntries(ctx, svc, target, start, extra, 0, seen)
 		if err != nil {
-			return err
+			failures++
+			if !isTransient(err) || failures >= maxPollFailures {
+				return err
+			}
+			wait = min(wait*2, max(interval, maxPollBackoff))
+			continue
 		}
+		wait, failures = interval, 0
 		for _, e := range fresh {
 			if err := emit(e); err != nil {
 				return err

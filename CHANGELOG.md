@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- `cml logs -f` on GCP no longer exits on the first rate-limit (429) or
+  transient server error (500/503): the poll backs off, doubling the wait up
+  to a minute, and gives up after five failures in a row.
+
 ### Removed
 - `defaults.interactive` and `defaults.region_fallback` from the config
   schema; no command ever read them. Existing configs still load and the keys

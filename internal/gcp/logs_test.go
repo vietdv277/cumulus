@@ -413,3 +413,109 @@ func TestGCPLogsTailReturnsEmitError(t *testing.T) {
 		t.Errorf("Tail slept %d times before returning, want 0", sleeps)
 	}
 }
+
+func TestGCPLogsTailBacksOffOnTransientErrors(t *testing.T) {
+	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	calls := 0
+	p, _ := newTestLogsProvider(t, "proj", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		switch calls {
+		case 1: // initial window
+			fmt.Fprint(w, `{}`)
+		case 2, 3: // two rate-limited polls
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"code":429,"message":"quota exceeded"}}`)
+		case 4:
+			fmt.Fprint(w, `{"entries":[`+
+				`{"insertId":"a","timestamp":"2024-01-02T03:04:06Z","logName":"projects/proj/logs/app","textPayload":"one"}]}`)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	})
+	p.now = func() time.Time { return now }
+
+	var waits []time.Duration
+	p.sleep = func(ctx context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		if len(waits) > 4 {
+			return context.Canceled
+		}
+		return nil
+	}
+
+	var got []string
+	err := p.Tail(context.Background(), "app", &provider.LogsOptions{Since: time.Hour, PollInterval: 2 * time.Second},
+		func(e types.LogEntry) error {
+			got = append(got, e.Message)
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("Tail() error = %v, want nil (429s retried, then cancelled)", err)
+	}
+	if len(got) != 1 || got[0] != "one" {
+		t.Errorf("emitted = %v, want [one] after the retries", got)
+	}
+	want := []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 2 * time.Second, 2 * time.Second}
+	if fmt.Sprint(waits) != fmt.Sprint(want) {
+		t.Errorf("waits = %v, want %v (doubling on 429, reset after a good poll)", waits, want)
+	}
+}
+
+func TestGCPLogsTailGivesUpAfterRepeatedTransientErrors(t *testing.T) {
+	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	calls := 0
+	p, _ := newTestLogsProvider(t, "proj", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":{"code":503,"message":"unavailable"}}`)
+	})
+	p.now = func() time.Time { return now }
+
+	var waits []time.Duration
+	p.sleep = func(ctx context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}
+
+	err := p.Tail(context.Background(), "app", &provider.LogsOptions{Since: time.Hour, PollInterval: 20 * time.Second},
+		func(types.LogEntry) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("Tail() error = %v, want the 503 after %d failed polls", err, maxPollFailures)
+	}
+	if calls-1 != maxPollFailures {
+		t.Errorf("polls = %d, want %d", calls-1, maxPollFailures)
+	}
+	want := []time.Duration{20 * time.Second, 40 * time.Second, time.Minute, time.Minute, time.Minute}
+	if fmt.Sprint(waits) != fmt.Sprint(want) {
+		t.Errorf("waits = %v, want %v (capped at %v)", waits, want, maxPollBackoff)
+	}
+}
+
+func TestGCPLogsTailStopsOnPermanentError(t *testing.T) {
+	now := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	calls := 0
+	p, _ := newTestLogsProvider(t, "proj", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"error":{"code":403,"message":"permission denied"}}`)
+	})
+	p.now = func() time.Time { return now }
+	p.sleep = func(ctx context.Context, d time.Duration) error { return nil }
+
+	err := p.Tail(context.Background(), "app", &provider.LogsOptions{Since: time.Hour},
+		func(types.LogEntry) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("Tail() error = %v, want the 403", err)
+	}
+	if calls != 2 {
+		t.Errorf("server got %d requests, want 2 (no retry on 403)", calls)
+	}
+}

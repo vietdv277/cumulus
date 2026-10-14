@@ -75,5 +75,5 @@ flag; it was run against a copy of the config with `gcp:verify` as the current c
 
 Follow-ups:
 
-- `cml logs -f` exits on the first 429/503; tailing should back off and keep polling.
+- Fixed: `cml logs -f` exited on the first 429/503; the GCP tail now backs off and keeps polling.
 - `cml doctor` has no `--context`; it checks only the current context.
