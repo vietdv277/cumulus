@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+- `defaults.interactive` and `defaults.region_fallback` from the config
+  schema; no command ever read them. Existing configs still load and the keys
+  are dropped on the next save.
+
 ## [0.12.0] — 2026-10-14
 
 ### Added

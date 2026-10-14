@@ -6,54 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cumulus (`cml`) is a personal CLI tool for AWS and GCP resource management, written in Go.
 
-## Module Path
-
-`github.com/vietdv277/cumulus`
-
-All imports must use this full path.
-
-## Tech Stack
-
-- Language: Go 1.26+ (`go.mod`; CI builds on the latest 1.26.x patch)
-- CLI Framework: Cobra + Viper
-- AWS SDK: `aws-sdk-go-v2`
-- GCP SDK: `cloud.google.com/go/compute` + `google.golang.org/api`
-- TUI: charmbracelet/bubbletea (interactive selectors) + charmbracelet/lipgloss (styling)
-
 ## Build & Test
 
-```bash
-# Build (injects version/commit/date via ldflags)
-make build
-
-# Run without building
-make run ARGS="ec2 ls"
-
-# Test all packages
-make test
-
-# Run a single test
-go test ./internal/aws/... -run TestName -v
-
-# Test with coverage report
-make test-cover
-
-# Format, vet, test, and build
-make all
-
-# Lint (requires golangci-lint)
-make lint
-
-# Vulnerability scan (also runs in CI)
-go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-
-# Install to $GOPATH/bin
-make install
-```
-
-CI (`.github/workflows/ci.yml`) runs lint (golangci-lint v2.14.0), `go test -race`, govulncheck
-and a build. A golangci-lint binary built with an older Go than the toolchain crashes on load;
-use `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run` instead.
+`make build/test/lint/all` wrap the usual Go commands (see `Makefile`). CI
+(`.github/workflows/ci.yml`) runs lint (golangci-lint v2.14.0), `go test -race`, govulncheck and a
+build. A golangci-lint binary built with an older Go than the toolchain crashes on load; use
+`go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run` instead.
 
 Tests are pure unit tests: no network or cloud calls, and config/kubeconfig tests point
 `HOME`/`XDG_CONFIG_HOME`/`KUBECONFIG` at `t.TempDir()`.
@@ -112,8 +70,6 @@ tunnels:                           # saved tunnel configs (cml vm tunnel --save 
     local_port: 5432
 defaults:
   output: table                    # table | json | yaml — read by the global --output flag (flag wins)
-  interactive: false               # reserved, not yet read by commands
-  region_fallback: us-east-1       # reserved, not yet read by commands
 ```
 
 Use `ParseContextName("aws:prod")` → `{provider: "aws", name: "prod"}`.
@@ -149,13 +105,7 @@ Cloud SQL Admin, Cloud Storage); `db connect` on GCP runs `cloud-sql-proxy`, and
 signs V4 URLs locally from service-account key credentials.
 `LogsProvider` is implemented for AWS (CloudWatch Logs) and GCP (Cloud Logging, `logging/v2`).
 
-### Kubeconfig (`internal/kubeconfig/`)
-
-Read-only reader for `~/.kube/config` (or `KUBECONFIG`). Every file in `KUBECONFIG` is
-merged like kubectl does (first file wins for duplicates and `current-context`). Extracts
-contexts and current-context for `cml k8s contexts`. Writing is delegated to cloud CLIs
-(`aws eks update-kubeconfig`, `gcloud container clusters get-credentials`) — do not
-add kubeconfig mutation here.
+### `k8s connect`
 
 `cml k8s connect <cluster>` (AWS only) uses `AWSVMProvider.StartPortForward`
 (in `internal/aws/vm.go`) to open an SSM port-forward to the context's
@@ -174,6 +124,8 @@ by event ID. GCP (`internal/gcp/logs.go`): a target is a log name;
 parentheses, deduped by insert ID. Both tail by polling (default 2s).
 `--follow` rejects `-o yaml` and `--limit`; Ctrl-C during a tail exits 0.
 
+### Tunnels
+
 Tunnel lifecycle rules: the local port must be free before the tunnel starts (a busy port
 would silently route through another tunnel); readiness fails fast if the tunnel process
 exits; the SSM session runs in its own process group (`internal/aws/tunnel_unix.go`,
@@ -181,116 +133,8 @@ exits; the SSM session runs in its own process group (`internal/aws/tunnel_unix.
 too; `vm tunnel` traps SIGINT/SIGTERM itself; SIGTERM to `k8s connect` reaches the subshell
 as SIGHUP. Tunnel sessions get no stdin.
 
-### AWS Client (`internal/aws/client.go`)
-
-Uses the functional options pattern:
-
-```go
-client, err := aws.NewClient(ctx, aws.WithProfile("prod"), aws.WithRegion("us-east-1"))
-```
-
-The `Client` struct holds sub-clients for EC2, Auto Scaling, ELBv2, RDS, S3, and EKS.
-They are constructed lazily on first use; SSM and STS calls use the shared
-AWS config loaded into the client.
-
-### GCP Client (`internal/gcp/client.go`)
-
-Uses Application Default Credentials (ADC) via `google.FindDefaultCredentials`. Auth resolves in order:
-`GOOGLE_APPLICATION_CREDENTIALS` env var → gcloud user credentials → GCE metadata server.
-
-```go
-client, err := gcp.NewClient(ctx, gcp.WithProject("my-project"), gcp.WithRegion("us-central1"))
-```
-
-GCP VM connectivity uses `gcloud compute ssh`, optionally routing through an IAP bastion configured on the context.
-
-GCP `region` field behaviour (`zoneRE`/`regionRE` in `internal/gcp/vm.go`):
-
-- a zone (e.g. `us-central1-a`) uses a zone-scoped `instances.List`;
-- a region uses `instances.AggregatedList` filtered to that region's zones;
-- anything else is an error.
-
-`bastion_zone` falls back to `region` only when `region` is a zone. A VM name found in
-several zones is an error.
-
-### AWS errors and lookups
-
-- Report "not found" only for the real not-found API codes (`isNotFoundErr` in
-  `internal/aws/errors.go`); wrap and return everything else (AccessDenied, expired SSO).
-- List calls use the SDK v2 paginators.
-- A VM name matching several non-terminated instances is an error listing each `id (state)`.
-
-### Secrets Routing (`internal/aws/secrets.go`)
-
-- `ssm:<name>` / `sm:<name>` force the backend (prefix stripped).
-- Names starting with `/` route to SSM Parameter Store; other names route to Secrets Manager.
-  `get` falls back to SSM on a Secrets Manager not-found; `set` updates an existing SSM
-  parameter of that name instead of creating a duplicate secret.
-- `delete` never falls back to SSM: it errors and points to `ssm:<name>`. Secrets Manager
-  deletes are recoverable for 7 days unless `--force`.
-- `List()` aggregates both, or one backend with `--ssm-only` / `--sm-only`.
-
-## Full Command Tree
-
-```text
-cml
-├── vm                     # Context-aware unified VM management (AWS + GCP)
-│   ├── list               # List VMs (--state, --name, --tag, --interactive)
-│   ├── get <id|name>      # Get VM details
-│   ├── connect <id|name>  # SSH/SSM (AWS) or gcloud ssh (GCP)
-│   ├── tunnel <id> ...    # Port forwarding via SSM or gcloud (--save <name> to store, --force to overwrite)
-├── tunnel                  # Saved tunnels (stored under tunnels: in the config)
-│   ├── list               # List saved tunnels (--output json/yaml)
-│   ├── start <name>       # Start a saved tunnel with its saved context (--local-port)
-│   └── rm <name>          # Remove a saved tunnel
-│   ├── start/stop/reboot  # Lifecycle (stop/reboot confirm; --yes)
-├── secrets                # Unified secrets (AWS: SSM + Secrets Manager; GCP: Secret Manager)
-│   ├── list               # List secrets (--ssm-only / --sm-only, AWS only)
-│   ├── get <name>         # Get secret value (ssm:/sm: prefixes force the backend, AWS only)
-│   ├── set <name> <val>   # Create/update secret
-│   └── delete <name>      # Delete secret (confirms; --yes; AWS SM --force = no recovery window, GCP permanent)
-├── db                     # Managed databases (AWS RDS; GCP Cloud SQL)
-│   ├── list               # List databases (--engine filter)
-│   ├── get <name>         # Details
-│   └── connect <name>     # AWS: port-forward via bastion (--via <instance-id>); GCP: cloud-sql-proxy
-├── storage (s3)           # Object storage: s3://bucket/key on AWS, gs://bucket/key on GCP
-│   ├── ls [uri [pfx]]     # List buckets, or objects under prefix
-│   ├── cp <src> <dst>     # Copy one object (local ↔ remote, remote → remote; ≤ 5 GiB on S3)
-│   ├── sync <src> <dst>   # Sync directory (aws s3 sync / gcloud storage rsync; --delete confirms; --yes)
-│   └── presign <uri>      # Presigned GET URL (V4 on GCS, needs service-account credentials; expiry ≤ 7 days)
-├── logs (log)              # Query/tail logs (AWS CloudWatch Logs; GCP Cloud Logging)
-│   ├── <target>            # Query a log group (--since, --filter, --limit, -f/--follow)
-│   └── list [prefix]       # List log groups (--output json/yaml)
-├── k8s                    # Kubernetes cluster management
-│   ├── list               # List EKS / GKE clusters in context
-│   ├── get <name>         # Cluster details
-│   ├── use <name>         # Update kubeconfig + switch kubectl context
-│   ├── connect <name>     # AWS: SSM tunnel to context bastion + subshell with HTTPS_PROXY (--local-port)
-│   └── contexts           # List kubectl contexts
-├── use                    # Context management
-│   ├── <context>          # Switch active context
-│   ├── add <context>      # Add context (--profile/--project, --region, bastion flags)
-│   ├── update <context>   # Update specific fields of a context
-│   └── delete <context>   # Remove context
-├── status                 # Show current context and auth info
-├── contexts (ctx)         # List all contexts
-├── alias                  # Context aliases
-│   ├── list               # List aliases (name → context; "(missing)" = dangling)
-│   ├── add <name> <ctx>   # Add alias (target must be a real context; --force overwrites)
-│   └── rm <name>          # Remove alias (remove alias also works)
-├── ec2                    # Legacy AWS EC2 commands
-│   ├── ls                 # List instances
-│   └── ssh                # Interactive SSM session selector (bubbletea TUI)
-├── profile                # Legacy AWS profile management (set → aws:<profile> context)
-├── vpc                    # VPC listing/selection
-├── asg                    # Auto Scaling Group commands
-├── lb                     # Load Balancer commands
-├── aws (-c/--context)      # AWS-specific commands; --context overrides the active context
-│   ├── ssm param          # SSM Parameter Store (list, get, set)
-│   └── iam whoami         # Show caller identity (STS)
-├── doctor                 # Local setup checks (config, aliases, tunnels, tools, profiles; --online adds auth checks)
-└── version                # CLI version info
-```
+Package-specific notes live next to the code: `internal/aws/CLAUDE.md` (errors, secrets routing),
+`internal/gcp/CLAUDE.md` (zone/region handling), `internal/kubeconfig/CLAUDE.md`.
 
 ## Conventions
 
@@ -321,15 +165,3 @@ cml
   second retry layer on AWS
 - Data-printing commands route through `render` (`cmd/output.go` → `internal/output`); with
   json/yaml, stdout carries only the document and empty results print `[]`
-
-## UI Patterns
-
-Interactive selectors (bubbletea `tea.Model`) in `internal/ui/` follow a consistent pattern:
-search/filter input, cursor navigation, details panel, status bar. Table renderers use Unicode
-box-drawing characters from `internal/ui/styles.go`. State indicators: `●` running, `○` stopped,
-`◐` pending.
-
-## Version Injection
-
-Version metadata is injected at build time via ldflags into `cmd.Version`, `cmd.Commit`,
-`cmd.BuildDate` (see Makefile).

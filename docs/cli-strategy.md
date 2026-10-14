@@ -11,7 +11,7 @@
 
 - Unified interface for AWS and GCP resources
 - Context-aware commands (set provider once, commands follow)
-- Interactive selection with fuzzy search
+- Interactive selection with search-as-you-type
 - Replace complex CLI commands and aliases
 - Easy to extend for additional providers (Azure, OCI, etc.)
 
@@ -77,113 +77,130 @@ cml vm list -c gcp:prod
 
 ### Resource Mapping
 
-| Command | AWS | GCP | Description |
-|---------|-----|-----|-------------|
-| `vm` | EC2 | Compute Engine | Virtual machines |
-| `db` | RDS | Cloud SQL | Managed databases |
-| `db:nosql` | DynamoDB | Firestore | NoSQL databases |
-| `storage` | S3 | GCS | Object storage |
-| `secrets` | Secrets Manager / SSM Param | Secret Manager | Secrets and config |
-| `logs` | CloudWatch Logs | Cloud Logging | Log management |
-| `k8s` | EKS | GKE | Kubernetes clusters |
-| `functions` | Lambda | Cloud Functions | Serverless functions |
-| `dns` | Route53 | Cloud DNS | DNS management |
+| Command | AWS | GCP |
+|---------|-----|-----|
+| `vm` | EC2 | Compute Engine |
+| `db` | RDS | Cloud SQL |
+| `secrets` | Secrets Manager + SSM Parameter Store | Secret Manager |
+| `storage` (alias `s3`) | S3 | Cloud Storage |
+| `logs` (alias `log`) | CloudWatch Logs | Cloud Logging |
+| `k8s` | EKS | GKE |
+
+NoSQL, serverless functions and DNS are not built; see the backlog under Development Phases.
 
 ### Command Reference
+
+Context-aware commands (`vm`, `db`, `secrets`, `storage`, `logs`, `k8s`, `aws`) take
+`-c/--context <name>` (aliases work) and reject the legacy global `-p/--profile` and
+`-r/--region`. Data-printing commands take the global `-o/--output table|json|yaml`.
 
 #### VM Management
 
 ```bash
-cml vm list [flags]
-  -i, --interactive       Interactive TUI selection mode
-                          Type to filter · ↑↓ navigate · Enter:connect
-                          Ctrl+S:start · Ctrl+X:stop · Esc:quit
-  -s, --state <state>     Filter by state (running, stopped)
-  -t, --tag <key=value>   Filter by tag
-  -o, --output <format>   Output format (table, json, yaml)
+cml vm list [flags]                          # alias: ls
+  -i, --interactive       Interactive selector (Enter: connect · Ctrl+S: start · Ctrl+X: stop · Esc: quit)
+  -s, --state <state>     running (default), stopped, all
+      --name <pattern>    Filter by name pattern
+  -t, --tag <key=value>   Filter by tag (repeatable)
+cml vm get <name-or-id>
+cml vm connect <name-or-id>                  # SSM session (AWS) / gcloud compute ssh (GCP)
+cml vm tunnel <name-or-id> <remote-port> [local-port]
+      --save <name>       Save as a named tunnel (--force overwrites)
+cml vm start <name-or-id>
+cml vm stop <name-or-id>                     # confirms; -y/--yes skips
+cml vm reboot <name-or-id>                   # confirms; -y/--yes skips
+```
 
-cml vm get <name>
-cml vm start <name>
-cml vm stop <name>
-cml vm reboot <name>
-cml vm connect <name>
-cml vm tunnel <name> <remote-port> [local-port]
-cml vm tunnel <name> <remote-host> <remote-port> [local-port]
+#### Saved Tunnels
+
+```bash
+cml tunnel list
+cml tunnel start <name> [--local-port <port>]   # always runs in the tunnel's saved context
+cml tunnel rm <name>
 ```
 
 #### Database Management
 
 ```bash
-cml db list
-cml db get <name>
-cml db connect <name> [flags]
-  --via <bastion>         Connect via bastion/jump host
-  --local-port <port>     Local port for tunnel
+cml db list [--engine <engine>]              # alias: ls
+cml db get <name-or-id>
+cml db connect <name-or-id> [flags]          # AWS: SSM port-forward via a bastion; GCP: cloud-sql-proxy
+      --via <instance-id>   AWS bastion (defaults to the context's bastion)
+      --local-port <port>   Local port (defaults to the remote port)
 ```
 
 #### Secrets Management
 
 ```bash
-cml secrets list [prefix]
-cml secrets get <name> [flags]
-  --decode                Base64 decode value
-  --copy                  Copy to clipboard
-
+cml secrets list [prefix] [--ssm-only | --sm-only]   # backend filters: AWS only
+cml secrets get <name>                               # ssm:<name> / sm:<name> force the AWS backend
 cml secrets set <name> <value>
-cml secrets delete <name>
+cml secrets delete <name> [flags]                    # confirms
+      --force    Secrets Manager: no 7-day recovery window
+  -y, --yes      Skip the confirmation prompt
 ```
 
 #### Storage Management
 
 ```bash
-cml storage ls [bucket] [prefix]
-cml storage cp <source> <destination>
-cml storage sync <source> <destination>
-cml storage presign <path> [flags]
-  --expires <duration>    URL expiration (default: 1h)
+cml storage ls [s3://bucket|gs://bucket [prefix]]
+cml storage cp <src> <dst>                           # local ↔ remote, remote → remote
+cml storage sync <src> <dst> [--delete] [--dry-run] [-y]   # --delete confirms
+cml storage presign <s3://bucket/key|gs://bucket/key> [--expires <seconds>]   # default 3600, max 7 days
 ```
 
 #### Logs Management
 
 ```bash
-cml logs <target> [flags]
-  -f, --follow            Tail mode
-  -s, --since <duration>  Time range (e.g., 1h, 30m)
-  --filter <pattern>      Filter pattern
+cml logs <target> [flags]                    # alias: log
+      --since <duration>  How far back to start (default 15m)
+      --filter <expr>     CloudWatch filter pattern (AWS) / Logging query (GCP)
+      --limit <n>         Max entries, query only (default 100)
+  -f, --follow            Tail until Ctrl-C
+cml logs list [prefix]                       # log groups (AWS) / log names (GCP)
 ```
 
 #### Kubernetes Management
 
 ```bash
-cml k8s list
-cml k8s use <cluster>           # Updates kubeconfig
-cml k8s contexts                # List k8s contexts
+cml k8s list [-i] [--name <substring>]       # alias: ls
+cml k8s get <name>
+cml k8s use <name>                           # updates kubeconfig via aws/gcloud, switches kubectl context
+cml k8s connect <cluster> [--bastion <instance-id>] [--local-port <port>]   # AWS only
+cml k8s contexts
+```
+
+#### Contexts and Setup
+
+```bash
+cml use <context>                            # switch (aliases work)
+cml use add <context> [--profile <p> | --project <p>] [--region <r>] [--bastion ...]
+cml use update <context> [flags]
+cml use delete <context>                     # alias: rm
+cml contexts [-i]                            # alias: ctx
+cml status
+cml alias list | add <name> <context> [--force] | rm <name>
+cml doctor [--online]
 ```
 
 ---
 
 ## Provider-Specific Commands
 
-For features without cross-provider equivalents, use provider namespace:
+For features without a cross-provider equivalent, use the provider namespace.
 
 ### AWS-Specific
 
 ```bash
 cml aws ssm param list [prefix]
-cml aws ssm param get <name>
-cml aws ssm param set <name> <value>
+cml aws ssm param get <name> [--decode]
+cml aws ssm param set <name> <value> [--secure]
 cml aws iam whoami
-cml aws sts assume-role <role-arn>
 ```
 
 ### GCP-Specific
 
-```bash
-cml gcp projects list
-cml gcp projects use <project>
-cml gcp iap tunnel <instance> <port>
-cml gcp iam test-permissions <resource>
-```
+None yet; the planned `cml gcp` commands are in the backlog.
 
 ---
 
@@ -195,71 +212,57 @@ cml gcp iam test-permissions <resource>
 ~/.config/cml/config.yaml   # XDG-compliant (respects $XDG_CONFIG_HOME)
 ```
 
-Legacy paths (`~/.cml.yaml`, `~/.cml/config.yaml`, `~/Library/Application Support/cml/config.yaml`) are auto-migrated on first run.
+Legacy paths (`~/.cml.yaml`, `~/.cml/config.yaml`, `~/Library/Application Support/cml/config.yaml`)
+are auto-migrated on first run. The file is written atomically with mode 0600 in a 0700 directory.
 
 ### Config Structure
 
 ```yaml
 # ~/.config/cml/config.yaml
-
-# Current active context
 current_context: aws:prod
 
-# Context definitions
 contexts:
   aws:prod:
     provider: aws
     profile: prod-sso
     region: ap-southeast-1
-    
-  aws:dev:
-    provider: aws
-    profile: dev-sso
-    region: ap-southeast-1
-    
-  gcp:prod:
-    provider: gcp
-    project: mycompany-prod
-    region: asia-southeast1
-    
+    bastion: i-0abc123def456       # optional; used by db connect and k8s connect
+    bastion_port: 8888             # optional; k8s connect proxy port (default 8888)
   gcp:staging:
     provider: gcp
-    project: mycompany-staging
-    region: asia-southeast1
+    project: example-staging
+    region: asia-southeast1        # a region or a zone
+    bastion: jump-server-01        # optional IAP/SSH bastion
+    bastion_project: example-infra # defaults to project
+    bastion_zone: asia-southeast1-b
+    bastion_iap: true
 
-# Resource aliases for quick access
+# Short names for contexts
 aliases:
-  bastion: aws:prod:i-0abc123def456
-  jump: gcp:prod:jump-server-01
-  
-# Saved tunnel configurations
+  prod: aws:prod
+  stg: gcp:staging
+
+# Saved tunnels (cml vm tunnel --save, cml tunnel list/start/rm)
 tunnels:
   prod-db:
     context: aws:prod
-    bastion: bastion
-    remote_host: prod-db.abc123.ap-southeast-1.rds.amazonaws.com
-    remote_port: 3306
-    local_port: 3306
-    
-  staging-redis:
-    context: gcp:staging
-    target: redis-proxy-01
-    remote_port: 6379
-    local_port: 6379
+    target: i-0abc123def456
+    remote_port: 5432
+    local_port: 5432
 
-# Default settings
 defaults:
-  output: table
-  interactive: false
-  region_fallback: ap-southeast-1
+  output: table                    # table | json | yaml; the --output flag wins
 ```
+
+A saved tunnel may also carry `bastion` / `remote_host`; `cml tunnel start` rejects those as not
+supported yet.
 
 ### Alias Usage
 
 ```bash
-# Using saved aliases
-cml connect bastion           # Quick connect
-cml tunnel prod-db            # Saved tunnel config
+cml use prod                  # switch to aws:prod
+cml vm list -c stg            # one-off command in gcp:staging
+cml tunnel start prod-db      # saved tunnel, in its own context
 ```
 
 ---
@@ -268,205 +271,66 @@ cml tunnel prod-db            # Saved tunnel config
 
 ```bash
 cumulus/
-├── cmd/
-│   ├── root.go                   # Root command, global flags
-│   ├── use.go                    # Context switching
-│   ├── status.go                 # Status display
-│   ├── contexts.go               # List contexts
-│   │
-│   ├── vm.go                     # Unified VM commands
-│   ├── db.go                     # Unified DB commands
-│   ├── secrets.go                # Unified secrets commands
-│   ├── storage.go                # Unified storage commands
-│   ├── logs.go                   # Unified logs commands
-│   ├── k8s.go                    # Unified k8s commands
-│   │
-│   ├── aws/                      # AWS-specific commands
-│   │   ├── aws.go                # AWS subcommand root
-│   │   ├── ssm.go
-│   │   └── iam.go
-│   │
-│   └── gcp/                      # GCP-specific commands
-│       ├── gcp.go                # GCP subcommand root
-│       ├── iap.go
-│       └── projects.go
-│
-├── internal/
-│   ├── config/
-│   │   ├── config.go             # Config loading/saving
-│   │   ├── context.go            # Context management
-│   │   └── aliases.go            # Alias resolution
-│   │
-│   ├── provider/
-│   │   ├── provider.go           # Provider interface definitions
-│   │   ├── registry.go           # Provider registry
-│   │   ├── errors.go             # Common errors
-│   │   │
-│   │   ├── aws/
-│   │   │   ├── client.go         # AWS client initialization
-│   │   │   ├── vm.go             # EC2 implementation
-│   │   │   ├── db.go             # RDS implementation
-│   │   │   ├── secrets.go        # Secrets Manager / SSM
-│   │   │   ├── storage.go        # S3 implementation
-│   │   │   ├── logs.go           # CloudWatch implementation
-│   │   │   └── k8s.go            # EKS implementation
-│   │   │
-│   │   └── gcp/
-│   │       ├── client.go         # GCP client initialization
-│   │       ├── vm.go             # GCE implementation
-│   │       ├── db.go             # Cloud SQL implementation
-│   │       ├── secrets.go        # Secret Manager
-│   │       ├── storage.go        # GCS implementation
-│   │       ├── logs.go           # Cloud Logging
-│   │       └── k8s.go            # GKE implementation
-│   │
-│   └── ui/
-│       ├── table.go              # Table rendering
-│       ├── prompt.go             # Interactive prompts
-│       ├── spinner.go            # Progress indicators
-│       └── colors.go             # Color output
-│
-├── pkg/
-│   └── models/
-│       ├── vm.go                 # Unified VM model
-│       ├── db.go                 # Unified DB model
-│       ├── secret.go             # Unified secret model
-│       ├── bucket.go             # Unified storage model
-│       └── cluster.go            # Unified k8s model
-│
 ├── main.go
-├── go.mod
-└── go.sum
+├── cmd/                  # Cobra commands: context-aware (vm, db, secrets, storage, logs, k8s,
+│   │                     #   tunnel, use, contexts, status, alias, doctor) and legacy (ec2,
+│   │                     #   profile, asg, lb, vpc); output.go, confirm.go, context_resolve.go
+│   └── aws/              # cml aws ssm / iam
+├── internal/
+│   ├── aws/              # AWS providers (vm, db, secrets, storage, logs, k8s) + legacy helpers
+│   ├── gcp/              # GCP providers (vm, db, secrets, storage, logs, k8s), V4 signing
+│   ├── config/           # config file, contexts, aliases, tunnels, migrations
+│   ├── kubeconfig/       # read-only kubeconfig reader
+│   ├── output/           # table/json/yaml rendering
+│   ├── errhint/          # recovery hints for auth/permission errors
+│   ├── suggest/          # "did you mean" suggestions
+│   └── ui/               # bubbletea selectors, tables, styles
+├── pkg/
+│   ├── provider/         # provider interfaces
+│   └── types/            # shared domain types
+└── docs/
 ```
 
 ---
 
 ## Provider Interface Design
 
-### Core Interfaces
+Interfaces live in `pkg/provider/interfaces.go`; `CloudProvider` aggregates them
+(`VM()`, `Secrets()`, `DB()`, `Storage()`, `Logs()`, `K8s()`). Commands build the provider for the
+resolved context with a `switch` on `provider` (`aws` / `gcp`) in each `cmd/<resource>.go`.
 
-```bash
-Provider (main interface)
-├── Name() string
-├── VM() VMProvider
-├── DB() DBProvider
-├── Secrets() SecretsProvider
-├── Storage() StorageProvider
-├── Logs() LogsProvider
-└── K8s() K8sProvider
-```
-
-### VMProvider Interface
-
-```bash
-VMProvider
-├── List(ctx, filters) -> []VM, error
-├── Get(ctx, nameOrID) -> *VM, error
-├── Start(ctx, nameOrID) -> error
-├── Stop(ctx, nameOrID) -> error
-├── Reboot(ctx, nameOrID) -> error
-├── Connect(ctx, nameOrID) -> error
-└── Tunnel(ctx, nameOrID, opts) -> error
-```
-
-### DBProvider Interface
-
-```bash
-DBProvider
-├── List(ctx) -> []Database, error
-├── Get(ctx, nameOrID) -> *Database, error
-└── Connect(ctx, nameOrID, opts) -> error
-```
-
-### SecretsProvider Interface
-
-```bash
-SecretsProvider
-├── List(ctx, prefix) -> []Secret, error
-├── Get(ctx, name) -> *SecretValue, error
-├── Set(ctx, name, value) -> error
-└── Delete(ctx, name) -> error
-```
-
-### StorageProvider Interface
-
-```bash
-StorageProvider
-├── ListBuckets(ctx) -> []Bucket, error
-├── ListObjects(ctx, bucket, prefix) -> []Object, error
-├── Copy(ctx, src, dst) -> error
-├── Sync(ctx, src, dst, opts) -> error
-└── Presign(ctx, path, expiry) -> string, error
-```
+| Interface | Methods |
+|-----------|---------|
+| `VMProvider` | `List`, `Get`, `Start`, `Stop`, `Reboot`, `Connect`, `Tunnel` |
+| `DBProvider` | `List`, `Get`, `Connect` |
+| `SecretsProvider` | `List`, `Get`, `Set`, `Delete` |
+| `StorageProvider` | `ListBuckets`, `ListObjects`, `Copy`, `Sync`, `Presign` |
+| `LogsProvider` | `ListTargets`, `Query`, `Tail` |
+| `K8sProvider` | `ListClusters`, `GetCluster`, `UpdateKubeconfig` |
 
 ### Feature Support Matrix
 
-Handle features not available in all providers:
-
 | Method | AWS | GCP | Missing Behavior |
 |--------|-----|-----|------------------|
-| VM.Connect | SSM Session | gcloud SSH | - |
-| VM.Tunnel | SSM Port Forward | IAP Tunnel | - |
-| Secrets.List | ✓ | ✓ | - |
-| DB.Connect | Via bastion | Via Cloud SQL Proxy | - |
+| VM.Connect | SSM session | `gcloud compute ssh` (optional IAP bastion) | - |
+| VM.Tunnel | SSM port forward | IAP tunnel | - |
+| DB.Connect | SSM port forward via bastion | `cloud-sql-proxy` | `--via` on GCP is an error |
 | Storage.Presign | SigV4 | V4 signed URL | GCP needs service-account key credentials |
 | Secrets.Delete | 7-day recovery (`--force` immediate) | Permanent | Prompt states it is permanent |
+| Logs.Tail | Polls `FilterLogEvents` | Polls `entries.list` | - |
+| `k8s connect` | SSM tunnel + `HTTPS_PROXY` subshell | - | Error: AWS-only for now |
 
-Backend-specific options on the wrong provider (`--ssm-only`, `ssm:`/`sm:` prefixes and `--via` on GCP)
-return a clear error.
+Backend-specific options on the wrong provider (`--ssm-only`/`--sm-only`, `ssm:`/`sm:` prefixes,
+`--via` on GCP) return a clear error.
 
 ---
 
 ## Unified Models
 
-### VM Model
-
-```bash
-VM
-├── ID          string              # Provider-specific ID
-├── Name        string              # Name tag or instance name
-├── State       VMState             # running, stopped, pending
-├── PrivateIP   string
-├── PublicIP    string
-├── Type        string              # t3.micro, e2-medium
-├── Zone        string              # Availability zone
-├── Tags        map[string]string
-├── LaunchedAt  time.Time
-├── Provider    string              # aws, gcp
-└── Raw         interface{}         # Original API response
-```
-
-### Database Model
-
-```bash
-Database
-├── ID          string
-├── Name        string
-├── Engine      string              # mysql, postgres, etc.
-├── Version     string
-├── Endpoint    string
-├── Port        int
-├── State       string
-├── Provider    string
-└── Raw         interface{}
-```
-
-### Secret Model
-
-```bash
-Secret
-├── Name        string
-├── ARN         string              # Provider-specific identifier
-├── CreatedAt   time.Time
-├── UpdatedAt   time.Time
-├── Provider    string
-└── Raw         interface{}
-
-SecretValue
-├── Secret
-├── Value       string
-└── Version     string
-```
+Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretValue`,
+`Bucket`/`Object`, `LogTarget`/`LogEntry`, `K8sCluster`, plus legacy AWS types (`Instance`,
+`AutoScalingGroup`, `LoadBalancer`, `VPC`, `Subnet`, `AWSProfile`). Their json/yaml tags are the
+`--output json|yaml` schema.
 
 ---
 
@@ -517,7 +381,7 @@ SecretValue
 - [x] EKS / GKE implementations
 - [x] Kubeconfig management (shells out to `aws eks update-kubeconfig` / `gcloud container clusters get-credentials`)
 
-### Phase 6: Polish — in progress
+### Phase 6: Polish — complete
 
 - [x] Shell completions (zsh, bash, fish) — provided by Cobra's built-in `cml completion`
 - [x] `--output json/yaml/table` flag
@@ -548,21 +412,26 @@ SecretValue
 
 #### Documentation — after v0.12.0
 
-- [ ] Align this document with the code: Project Structure (no `internal/provider/`, `pkg/models/`
-  or `cmd/gcp/`), Dependencies (`google.golang.org/api`, not a planned `cloud.google.com/go`),
-  Command Reference flags (`storage presign --expires` in seconds, `logs --limit`, `logs list`,
-  `--yes`)
-- [ ] Move unbuilt spec items out of the reference sections into the backlog below
-- [ ] `defaults.interactive` and `defaults.region_fallback`: wire them into commands or drop them
-  from the config schema
-- [ ] Verify GCP parity against a real project (secrets, `db list/connect`, `gs://` storage and
-  presign, logs) and record the results
+- [x] Align this document with the code: Command Reference (flags from `--help`), Configuration,
+  Project Structure, Provider Interface Design, Unified Models, Dependencies, Adding New Providers,
+  Output Formats, Interactive Mode
+- [x] Move unbuilt spec items out of the reference sections into the backlog below
+- [x] `defaults.interactive` and `defaults.region_fallback`: dropped from the config schema (never
+  read; existing configs still load)
+- [x] Verify GCP parity against a real project (secrets, `db list/connect`, `gs://` storage and
+  presign, logs) and record the results — `docs/gcp-verification.md`: 13 ok, 2 expected errors
+  (permission, user-ADC presign), `db connect` not run, `logs -f` fails on a 429 (backlog)
 
 ### Backlog — unscheduled
 
+- `cml logs -f`: back off and keep polling on 429/503 instead of exiting (seen against a project
+  whose shared Cloud Logging read quota was nearly exhausted)
+- `cml doctor --context <name>` to check a context other than the current one
 - Retry idempotent GCP REST reads (Secret Manager, Cloud SQL Admin, Cloud Logging, GKE, Cloud
   Storage listing) on 429/5xx; these clients have no built-in retry
 - `--output wide`
+- Saved tunnels through a bastion / to a remote host (`bastion` / `remote_host` are stored but
+  `cml tunnel start` rejects them)
 - `secrets get --decode/--copy` (only `aws ssm param get --decode` exists)
 - `cml aws sts assume-role`
 - `cml gcp projects list/use`, `cml gcp iap tunnel`, `cml gcp iam test-permissions`
@@ -576,12 +445,15 @@ SecretValue
 | Purpose | Package |
 |---------|---------|
 | CLI framework | `github.com/spf13/cobra` |
-| Config management | `github.com/spf13/viper` |
-| AWS SDK | `github.com/aws/aws-sdk-go-v2` |
-| GCP SDK | `cloud.google.com/go` _(planned)_ |
+| Config management | `github.com/spf13/viper`, `gopkg.in/yaml.v3` |
+| AWS SDK | `github.com/aws/aws-sdk-go-v2` (EC2, Auto Scaling, ELBv2, RDS, S3, EKS, SSM, Secrets Manager, CloudWatch Logs, STS) |
+| GCP SDK | `cloud.google.com/go/compute` (VMs), `google.golang.org/api` (Secret Manager, Cloud SQL Admin, Cloud Storage, Cloud Logging, GKE), `golang.org/x/oauth2` |
 | TUI framework | `github.com/charmbracelet/bubbletea` |
 | TUI styling | `github.com/charmbracelet/lipgloss` |
 | Unicode display width | `github.com/mattn/go-runewidth` |
+
+External tools: `session-manager-plugin` (AWS SSM sessions), `gcloud` (GCP SSH, IAP, storage
+sync, kubeconfig), `cloud-sql-proxy` (GCP `db connect`), `aws` (EKS kubeconfig).
 
 ---
 
@@ -589,13 +461,13 @@ SecretValue
 
 To add a new provider (e.g., Azure):
 
-1. Add provider config type in `internal/config/`
-2. Create `internal/provider/azure/` directory
-3. Implement all required interfaces
-4. Register provider in `internal/provider/registry.go`
-5. Add Azure-specific commands in `cmd/azure/`
+1. Accept the provider name in `cml use add` (`cmd/use.go`) and add any config fields to `Context`
+   in `internal/config/context.go`
+2. Implement the `pkg/provider` interfaces in `internal/azure/`
+3. Add a `case "azure"` to the provider `switch` in each `cmd/<resource>.go`
+4. Add its tool and credential checks to `cml doctor` and its error classes to `internal/errhint`
 
-No changes required to unified commands or models.
+Unified commands, output rendering and the shared types need no changes.
 
 ---
 
@@ -613,25 +485,31 @@ No changes required to unified commands or models.
 
 ## Output Formats
 
-All list commands support:
+Data-printing commands take the global `-o/--output`; `defaults.output` sets the default and the
+flag wins.
 
 ```bash
 --output table    # Default, human-readable
---output json     # Machine-readable
+--output json     # Machine-readable; stdout carries only the document, empty results print []
 --output yaml     # Machine-readable
---output wide     # Extended table with more columns
 ```
+
+`cml logs -f -o json` prints one JSON object per line; `-f` rejects `yaml`. `--output wide` is in
+the backlog.
 
 ---
 
 ## Interactive Mode
 
-Commands with `-i` / `--interactive` open a bubbletea TUI with:
+Commands with `-i` / `--interactive` open a bubbletea selector with:
 
 - Search/filter by typing (all printable characters go to search)
 - Arrow key navigation with scrolling
 - Details panel for the highlighted item
 - Status bar with count and key hints
+
+Esc, `q` or Ctrl+C cancels with `selection cancelled` (exit 0). `-i` cannot be combined with
+`-o json|yaml`.
 
 ### Key Bindings
 
@@ -641,14 +519,19 @@ Commands with `-i` / `--interactive` open a bubbletea TUI with:
 | All | Type | Filter results |
 | All | `Backspace` | Delete last search character |
 | All | `Esc` / `Ctrl+C` | Quit without action |
-| `vm list -i` | `Enter` | Connect to VM via SSM |
+| `vm list -i` | `Enter` | Connect (SSM on AWS, `gcloud compute ssh` on GCP) |
 | `vm list -i` | `Ctrl+S` | Start VM |
-| `vm list -i` | `Ctrl+X` | Stop VM |
+| `vm list -i` | `Ctrl+X` | Stop VM (confirms) |
+| `k8s list -i` | `Enter` | `k8s use` the selected cluster |
 | `ctx -i` | `Enter` | Switch to selected context |
 
 ### Implemented
 
 ```bash
 cml vm list -i     # Search VMs, then connect / start / stop
+cml k8s list -i    # Search clusters, then switch kubeconfig to one
 cml ctx -i         # Search contexts and switch (like kubectx)
 ```
+
+Legacy commands open selectors when the target is omitted: `cml profile`, `cml ec2 ssh`,
+`cml vpc describe|subnets`, `cml lb describe|targets`, `cml asg describe`.
