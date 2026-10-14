@@ -527,7 +527,7 @@ SecretValue
 - [x] Saved tunnels (`vm tunnel --save`, `cml tunnel list/start/rm`)
 - [x] `--context` on `cml aws ssm/iam`
 
-#### Next release — v0.11.1 (findings from the v0.11.0 install check)
+#### v0.11.1 (findings from the v0.11.0 install check)
 
 - [x] Tighten an existing config directory to 0700 on save; `os.MkdirAll` leaves a pre-existing 0755
   `~/.config/cml` as is, so the `cml doctor` permissions hint never clears the failure
@@ -546,7 +546,7 @@ SecretValue
   standard retryer and Compute Engine reads retry; the `google.golang.org/api` REST clients do not
   (see the backlog)
 
-#### Documentation — v0.12.0
+#### Documentation — after v0.12.0
 
 - [ ] Align this document with the code: Project Structure (no `internal/provider/`, `pkg/models/`
   or `cmd/gcp/`), Dependencies (`google.golang.org/api`, not a planned `cloud.google.com/go`),
