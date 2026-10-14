@@ -527,7 +527,7 @@ SecretValue
 - [x] Saved tunnels (`vm tunnel --save`, `cml tunnel list/start/rm`)
 - [x] `--context` on `cml aws ssm/iam`
 
-#### Next release — v0.11.1 (findings from the v0.11.0 install check)
+#### v0.11.1 (findings from the v0.11.0 install check)
 
 - [x] Tighten an existing config directory to 0700 on save; `os.MkdirAll` leaves a pre-existing 0755
   `~/.config/cml` as is, so the `cml doctor` permissions hint never clears the failure
