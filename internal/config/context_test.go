@@ -411,3 +411,28 @@ func TestGetTunnelConfigSuggestions(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadCMLConfigIgnoresDroppedDefaults(t *testing.T) {
+	_, xdg := isolateHome(t)
+	writeTestFile(t, filepath.Join(xdg, "cml", "config.yaml"), `current_context: aws:prod
+contexts:
+  aws:prod:
+    provider: aws
+    profile: prod
+defaults:
+  output: json
+  interactive: true
+  region_fallback: us-east-1
+`, 0600)
+
+	cfg, err := LoadCMLConfig()
+	if err != nil {
+		t.Fatalf("LoadCMLConfig() error = %v", err)
+	}
+	if cfg.Defaults == nil || cfg.Defaults.Output != "json" {
+		t.Fatalf("defaults.output = %+v, want json", cfg.Defaults)
+	}
+	if _, ok := cfg.Contexts["aws:prod"]; !ok {
+		t.Fatal("context aws:prod missing after load")
+	}
+}

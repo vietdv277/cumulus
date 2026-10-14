@@ -42,11 +42,10 @@ type TunnelConfig struct {
 	LocalPort  int    `yaml:"local_port"`
 }
 
-// Defaults represents default settings
+// Defaults represents default settings. Configs written before v0.12.1 may
+// still carry interactive/region_fallback; unknown keys are ignored on load.
 type Defaults struct {
-	Output         string `yaml:"output,omitempty"`          // table, json, yaml
-	Interactive    bool   `yaml:"interactive,omitempty"`     // Default interactive mode
-	RegionFallback string `yaml:"region_fallback,omitempty"` // Fallback region
+	Output string `yaml:"output,omitempty"` // table, json, yaml
 }
 
 // CMLConfig represents the main configuration file (~/.config/cml/config.yaml)
@@ -90,8 +89,7 @@ func LoadCMLConfig() (*CMLConfig, error) {
 				Aliases:  make(map[string]string),
 				Tunnels:  make(map[string]*TunnelConfig),
 				Defaults: &Defaults{
-					Output:      "table",
-					Interactive: false,
+					Output: "table",
 				},
 			}, nil
 		}
