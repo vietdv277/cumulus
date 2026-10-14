@@ -420,12 +420,10 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
   read; existing configs still load)
 - [x] Verify GCP parity against a real project (secrets, `db list/connect`, `gs://` storage and
   presign, logs) and record the results — `docs/gcp-verification.md`: 13 ok, 2 expected errors
-  (permission, user-ADC presign), `db connect` not run, `logs -f` fails on a 429 (backlog)
+  (permission, user-ADC presign), `db connect` not run, `logs -f` failed on a 429 (fixed: the GCP tail now backs off)
 
 ### Backlog — unscheduled
 
-- `cml logs -f`: back off and keep polling on 429/503 instead of exiting (seen against a project
-  whose shared Cloud Logging read quota was nearly exhausted)
 - `cml doctor --context <name>` to check a context other than the current one
 - Retry idempotent GCP REST reads (Secret Manager, Cloud SQL Admin, Cloud Logging, GKE, Cloud
   Storage listing) on 429/5xx; these clients have no built-in retry

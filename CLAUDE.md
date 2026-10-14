@@ -121,7 +121,9 @@ is torn down in the deferred handler. `StartPortForward` is shared with
 group; CloudWatch `FilterLogEvents`/`DescribeLogGroups` via paginators, deduped
 by event ID. GCP (`internal/gcp/logs.go`): a target is a log name;
 `entries.list` with a `logName`/`timestamp` filter plus `--filter` in
-parentheses, deduped by insert ID. Both tail by polling (default 2s).
+parentheses, deduped by insert ID. Both tail by polling (default 2s). A GCP
+poll failing with 429/500/503 backs off (doubling, capped at 1m) and gives up
+after 5 in a row; AWS relies on the SDK retryer.
 `--follow` rejects `-o yaml` and `--limit`; Ctrl-C during a tail exits 0.
 
 ### Tunnels
