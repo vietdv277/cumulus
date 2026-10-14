@@ -30,6 +30,7 @@ cml vm list
 - **GCP bastion / IAP** — connect to private GCE instances through a bastion with optional IAP tunneling
 - **Unified secrets** — AWS SSM Parameter Store, Secrets Manager, and GCP Secret Manager behind one command
 - **Log queries** — query and tail CloudWatch log groups with filters and JSON/YAML output
+- **Just-in-time access** — request GCP Privileged Access Manager grants and wait for approval
 - **Beautiful output** — styled tables with color-coded state indicators
 
 ## Installation
@@ -501,6 +502,28 @@ cml logs list run.googleapis.com                           # log names by prefix
 cml logs run.googleapis.com/stderr --filter 'severity>=ERROR'
 cml logs cloudaudit.googleapis.com/activity --since 1h -f
 ```
+
+## Privileged access (GCP PAM)
+
+Request temporary access through GCP Privileged Access Manager entitlements in
+the context project. GCP contexts only.
+
+```bash
+cml pam list                                    # entitlements available to request
+cml pam request prod-admin -j "INC-123 hotfix"  # 1h grant (default)
+cml pam request prod-admin -d 4h -j "release" --wait   # wait until active
+cml pam grants                                  # open grants (active or pending)
+cml pam grants --all                            # including ended, denied, expired
+cml pam list -c prod-gcp --location global      # another context / PAM location
+```
+
+`--duration` cannot exceed the entitlement's maximum. An entitlement that
+requires a justification prompts for one when `-j` is not given on a terminal,
+and fails without a terminal. When an open grant already exists on the
+entitlement, `request` shows it instead of creating a second one. `--wait`
+polls every 5s until the grant is active, and exits 1 if it is denied or fails
+to activate; Ctrl-C stops waiting and leaves the request open. Progress lines are
+written to stderr, so `-o json` prints only the grant.
 
 ## AWS-specific commands
 

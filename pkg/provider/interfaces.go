@@ -179,6 +179,28 @@ type K8sProvider interface {
 	UpdateKubeconfig(ctx context.Context, nameOrID string) error
 }
 
+// PAMProvider requests just-in-time access through GCP Privileged Access
+// Manager. It is GCP only and not part of CloudProvider.
+type PAMProvider interface {
+	// ListEntitlements returns the entitlements the caller can request.
+	ListEntitlements(ctx context.Context) ([]types.Entitlement, error)
+
+	// ListGrants returns the caller's grants across all entitlements, newest first.
+	ListGrants(ctx context.Context) ([]types.Grant, error)
+
+	// GetGrant returns one grant by its full resource name.
+	GetGrant(ctx context.Context, name string) (*types.Grant, error)
+
+	// RequestGrant asks for access through an entitlement (its full resource name).
+	RequestGrant(ctx context.Context, entitlement string, req GrantRequest) (*types.Grant, error)
+}
+
+// GrantRequest contains the inputs of a PAM grant request.
+type GrantRequest struct {
+	Duration      time.Duration
+	Justification string
+}
+
 // CloudProvider is the main interface that all cloud providers must implement
 type CloudProvider interface {
 	// Name returns the provider identifier (e.g., "aws", "gcp")
