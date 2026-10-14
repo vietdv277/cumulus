@@ -43,9 +43,37 @@ record only whether the step worked and any error text.
 
 ## Recording results
 
-Fill in one row per check and paste the table back; the leader records the outcome in
-`cli-strategy.md` and opens issues for failures.
+Fill in one row per check; record the outcome in `cli-strategy.md` and open follow-ups for failures.
+Resource names, secret values and signed URLs stay out of the record.
 
-| # | Result (ok / error) | Notes |
+## Results — v0.12.0, 2026-10-14
+
+Run with `cml` v0.12.0 against one project, with a user account that has partial permissions.
+`cml doctor --online` passed 24/24, including the GCP token fetch (`doctor` has no `--context`
+flag; it was run against a copy of the config with `gcp:verify` as the current context).
+
+| # | Result | Notes |
 | --- | --- | --- |
-| 1 | - | - |
+| 1 | ok | Authenticated (ADC) |
+| 2 | ok | 79 VMs across zones; zone set on every row |
+| 3 | ok | One VM document |
+| 4 | ok | `did you mean` suggestion for a one-letter typo |
+| 5 | ok | 25 secrets listed |
+| 6 | expected error | 403 `secretmanager.versions.access` denied for this account; `Hint:` named the permission and project |
+| 7 | ok | 6 instances; engine, version and endpoint set |
+| 8 | ok | One instance |
+| 9 | not run | Opens a live proxy connection; out of scope for a read-only pass |
+| 10 | ok | 29 buckets |
+| 11 | ok | Objects listed in the first readable bucket |
+| 12 | ok | Object downloaded (8.6 KB), then deleted |
+| 13 | expected error | `presign needs service-account credentials (key file or impersonation)` with user ADC |
+| 14 | ok | 38 log names |
+| 15 | ok | 5 entries (first attempt hit the project's shared 429 read quota; a retry passed with 1 request) |
+| 16 | failed | 3 polls in ~7s, then a 429 from the project's shared Logging read quota ended the tail (exit 1) |
+| 17 | ok | 1 cluster; node count set |
+| 18 | ok | Covered by #6: permission hint shown |
+
+Follow-ups:
+
+- `cml logs -f` exits on the first 429/503; tailing should back off and keep polling.
+- `cml doctor` has no `--context`; it checks only the current context.

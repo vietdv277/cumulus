@@ -381,7 +381,7 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
 - [x] EKS / GKE implementations
 - [x] Kubeconfig management (shells out to `aws eks update-kubeconfig` / `gcloud container clusters get-credentials`)
 
-### Phase 6: Polish — in progress
+### Phase 6: Polish — complete
 
 - [x] Shell completions (zsh, bash, fish) — provided by Cobra's built-in `cml completion`
 - [x] `--output json/yaml/table` flag
@@ -418,11 +418,15 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
 - [x] Move unbuilt spec items out of the reference sections into the backlog below
 - [x] `defaults.interactive` and `defaults.region_fallback`: dropped from the config schema (never
   read; existing configs still load)
-- [ ] Verify GCP parity against a real project (secrets, `db list/connect`, `gs://` storage and
-  presign, logs) and record the results — checklist in `docs/gcp-verification.md`
+- [x] Verify GCP parity against a real project (secrets, `db list/connect`, `gs://` storage and
+  presign, logs) and record the results — `docs/gcp-verification.md`: 13 ok, 2 expected errors
+  (permission, user-ADC presign), `db connect` not run, `logs -f` fails on a 429 (backlog)
 
 ### Backlog — unscheduled
 
+- `cml logs -f`: back off and keep polling on 429/503 instead of exiting (seen against a project
+  whose shared Cloud Logging read quota was nearly exhausted)
+- `cml doctor --context <name>` to check a context other than the current one
 - Retry idempotent GCP REST reads (Secret Manager, Cloud SQL Admin, Cloud Logging, GKE, Cloud
   Storage listing) on 429/5xx; these clients have no built-in retry
 - `--output wide`
