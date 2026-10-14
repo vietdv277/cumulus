@@ -51,8 +51,10 @@ for one when -j is not given on a terminal.
 When an open grant (active or awaiting approval) already exists on the
 entitlement, it is shown and no new request is made.
 
---wait polls until the grant is active, or fails when it is denied or its
-activation fails. Ctrl-C stops waiting; the request stays open.`,
+A grant that needs no approval activates within seconds; request waits for
+it (up to 2 minutes). --wait also waits through approval, however long it
+takes, and fails when the grant is denied or its activation fails. Ctrl-C
+stops waiting; the request stays open.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runPAMRequest,
 }
@@ -82,7 +84,7 @@ func init() {
 
 	pamRequestCmd.Flags().DurationVarP(&pamDuration, "duration", "d", time.Hour, "How long the access lasts (e.g. 30m, 2h)")
 	pamRequestCmd.Flags().StringVarP(&pamJustification, "justification", "j", "", "Reason for the request")
-	pamRequestCmd.Flags().BoolVarP(&pamWait, "wait", "w", false, "Wait until the grant is active")
+	pamRequestCmd.Flags().BoolVarP(&pamWait, "wait", "w", false, "Also wait through approval until the grant is active")
 
 	pamGrantsCmd.Flags().BoolVarP(&pamAll, "all", "a", false, "Include ended, denied and expired grants")
 }
@@ -172,7 +174,8 @@ func runPAMRequest(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// Progress goes to stderr so -o json/yaml keeps stdout to the document.
-	r := &pamRequester{p: p, in: os.Stdin, status: os.Stderr, sleep: sleepContext, interval: pamPollInterval}
+	r := &pamRequester{p: p, in: os.Stdin, status: os.Stderr, sleep: sleepContext,
+		interval: pamPollInterval, activationTimeout: pamActivationTimeout}
 	grant, err := r.request(ctx, args[0], pamDuration, pamJustification, pamWait)
 	if err != nil {
 		return err
@@ -180,8 +183,14 @@ func runPAMRequest(cmd *cobra.Command, args []string) error {
 	return render(os.Stdout, out, grant, func() { printGrantSummary(*grant) })
 }
 
-// pamPollInterval is how often --wait re-reads a pending grant.
-const pamPollInterval = 5 * time.Second
+// pamPollInterval is how often a pending grant is re-read while it awaits
+// approval; activation takes seconds, so a scheduled grant is polled faster.
+const (
+	pamPollInterval       = 5 * time.Second
+	pamActivationInterval = 2 * time.Second
+	// pamActivationTimeout bounds the wait for activation without --wait.
+	pamActivationTimeout = 2 * time.Minute
+)
 
 // pamRequester runs a grant request: validation, reuse of an open grant, and
 // the optional wait. Its I/O and clock are injectable for tests.
@@ -191,6 +200,9 @@ type pamRequester struct {
 	status   io.Writer
 	sleep    func(context.Context, time.Duration) error
 	interval time.Duration
+	// activationTimeout bounds the default wait for a grant that needs no
+	// approval; 0 means no default wait.
+	activationTimeout time.Duration
 }
 
 func (r *pamRequester) request(ctx context.Context, id string, d time.Duration, justification string, wait bool) (*types.Grant, error) {
@@ -216,7 +228,7 @@ func (r *pamRequester) request(ctx context.Context, id string, d time.Duration, 
 	for _, g := range grants {
 		if g.Entitlement == ent.ID && g.Open() {
 			_, _ = fmt.Fprintf(r.status, "An open grant already exists on %s; no new request made.\n", ent.ID)
-			return r.waitIfAsked(ctx, &g, wait)
+			return r.wait(ctx, &g, wait)
 		}
 	}
 
@@ -238,23 +250,38 @@ func (r *pamRequester) request(ctx context.Context, id string, d time.Duration, 
 		return nil, err
 	}
 	_, _ = fmt.Fprintf(r.status, "Requested %s on %s for %s: %s\n", grant.ID, ent.ID, shortDuration(d), grant.State)
-	return r.waitIfAsked(ctx, grant, wait)
+	return r.wait(ctx, grant, wait)
 }
 
-// waitIfAsked polls a pending grant until it leaves the pending states when
-// wait is set. Ctrl-C ends the wait without an error, returning the last state.
-func (r *pamRequester) waitIfAsked(ctx context.Context, g *types.Grant, wait bool) (*types.Grant, error) {
-	if !wait {
-		return g, nil
+// wait polls a pending grant until it is active or has failed. With --wait
+// it waits as long as it takes; without it, it waits only for a grant that
+// needs no approval (SCHEDULED/ACTIVATING), for at most activationTimeout.
+// Ctrl-C or the timeout ends the wait without an error, returning the last state.
+func (r *pamRequester) wait(ctx context.Context, g *types.Grant, explicit bool) (*types.Grant, error) {
+	if !explicit {
+		if g.State == "APPROVAL_AWAITED" || r.activationTimeout <= 0 {
+			return g, nil
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.activationTimeout)
+		defer cancel()
 	}
 	last := g.State
 	for g.Pending() {
-		if err := r.sleep(ctx, r.interval); err != nil {
+		interval := r.interval
+		if g.State != "APPROVAL_AWAITED" {
+			interval = min(interval, pamActivationInterval)
+		}
+		if err := r.sleep(ctx, interval); err != nil {
 			_, _ = fmt.Fprintf(r.status, "Stopped waiting; grant %s is still %s.\n", g.ID, g.State)
 			return g, nil
 		}
 		next, err := r.p.GetGrant(ctx, g.Name)
 		if err != nil {
+			if ctx.Err() != nil {
+				_, _ = fmt.Fprintf(r.status, "Stopped waiting; grant %s is still %s.\n", g.ID, g.State)
+				return g, nil
+			}
 			return nil, err
 		}
 		g = next
@@ -263,7 +290,7 @@ func (r *pamRequester) waitIfAsked(ctx context.Context, g *types.Grant, wait boo
 			last = g.State
 		}
 	}
-	if g.State != "ACTIVE" {
+	if !g.Open() {
 		return nil, fmt.Errorf("grant %s on %s ended as %s", g.ID, g.Entitlement, g.State)
 	}
 	return g, nil
@@ -399,7 +426,9 @@ func printGrantSummary(g types.Grant) {
 	}
 	switch g.State {
 	case "APPROVAL_AWAITED":
-		fmt.Println("Waiting for an approver; check with 'cml pam grants'.")
+		fmt.Println("Waiting for an approver; check with 'cml pam grants' or rerun with --wait.")
+	case "SCHEDULED", "ACTIVATING":
+		fmt.Println("Activation in progress; check with 'cml pam grants'.")
 	case "ACTIVE":
 		fmt.Println("IAM changes can take a minute to apply.")
 	}

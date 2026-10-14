@@ -9,9 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - `cml pam` for GCP Privileged Access Manager: `pam list` shows the
   entitlements the caller can request, `pam request <entitlement>` asks for a
-  grant (`-d/--duration`, `-j/--justification`, `--wait` until active), and
-  `pam grants [--all]` lists the caller's grants. A request reuses an open
-  grant on the same entitlement instead of creating another.
+  grant (`-d/--duration`, `-j/--justification`), and `pam grants [--all]`
+  lists the caller's grants. A grant that needs no approval is waited on
+  until active (up to 2 minutes); `--wait` also waits through approval. A
+  request reuses an open grant on the same entitlement instead of creating
+  another.
 
 ### Fixed
 - `cml logs -f` on GCP no longer exits on the first rate-limit (429) or
