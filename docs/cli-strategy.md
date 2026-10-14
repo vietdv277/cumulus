@@ -546,7 +546,7 @@ SecretValue
   standard retryer and Compute Engine reads retry; the `google.golang.org/api` REST clients do not
   (see the backlog)
 
-#### Documentation — v0.12.0
+#### Documentation — after v0.12.0
 
 - [ ] Align this document with the code: Project Structure (no `internal/provider/`, `pkg/models/`
   or `cmd/gcp/`), Dependencies (`google.golang.org/api`, not a planned `cloud.google.com/go`),
