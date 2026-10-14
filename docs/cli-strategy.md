@@ -418,7 +418,7 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
   standard retryer and Compute Engine reads retry; the `google.golang.org/api` REST clients do not
   (see the backlog)
 
-#### Documentation — after v0.12.0
+#### Documentation — v0.13.0
 
 - [x] Align this document with the code: Command Reference (flags from `--help`), Configuration,
   Project Structure, Provider Interface Design, Unified Models, Dependencies, Adding New Providers,
@@ -430,7 +430,7 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
   presign, logs) and record the results — `docs/gcp-verification.md`: 13 ok, 2 expected errors
   (permission, user-ADC presign), `db connect` not run, `logs -f` failed on a 429 (fixed: the GCP tail now backs off)
 
-### Just-in-time access — after v0.12.0
+### Just-in-time access — v0.13.0
 
 - [x] `cml pam list/request/grants` on GCP Privileged Access Manager (project-level entitlements,
   `--location`, `--wait`, reuse of an open grant)

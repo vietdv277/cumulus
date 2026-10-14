@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-14
+
 ### Added
 - `cml pam` for GCP Privileged Access Manager: `pam list` shows the
   entitlements the caller can request, `pam request <entitlement>` asks for a
@@ -19,6 +21,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `cml logs -f` on GCP no longer exits on the first rate-limit (429) or
   transient server error (500/503): the poll backs off, doubling the wait up
   to a minute, and gives up after five failures in a row.
+
+### Changed
+- `google.golang.org/api` v0.276.0 → v0.287.1 (required by the PAM client).
 
 ### Removed
 - `defaults.interactive` and `defaults.region_fallback` from the config
@@ -198,7 +203,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Auto Scaling Group commands: `cml asg ls/describe/instances/scale`.
 
-[Unreleased]: https://github.com/vietdv277/cumulus/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/vietdv277/cumulus/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/vietdv277/cumulus/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/vietdv277/cumulus/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/vietdv277/cumulus/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/vietdv277/cumulus/compare/v0.10.0...v0.11.0
