@@ -25,8 +25,8 @@ The codebase has a legacy layer and a newer context-aware layer. Both coexist:
 - **Legacy**: `cmd/ec2.go`, `cmd/profile.go`, `cmd/asg.go`, `cmd/lb.go`, `cmd/vpc.go`, `cmd/aws/` —
   direct AWS commands with `--profile`/`--region` flags
 - **Context-aware**: `cmd/vm.go`, `cmd/secrets.go`, `cmd/db.go`, `cmd/storage.go`, `cmd/k8s.go`,
-  `cmd/use.go`, `cmd/status.go`, `cmd/contexts.go` — use a saved context (`~/.config/cml/config.yaml`)
-  to route to the right provider/profile/region
+  `cmd/pam.go`, `cmd/use.go`, `cmd/status.go`, `cmd/contexts.go` — use a saved context
+  (`~/.config/cml/config.yaml`) to route to the right provider/profile/region
 
 Context-aware commands resolve their context through `resolveContext` in
 `cmd/context_resolve.go` (the `--context` flag with alias resolution, else the current
@@ -104,6 +104,8 @@ GCP secrets, db and storage use the REST clients in `google.golang.org/api` (Sec
 Cloud SQL Admin, Cloud Storage); `db connect` on GCP runs `cloud-sql-proxy`, and GCS presign
 signs V4 URLs locally from service-account key credentials.
 `LogsProvider` is implemented for AWS (CloudWatch Logs) and GCP (Cloud Logging, `logging/v2`).
+`PAMProvider` is GCP only (Privileged Access Manager, the `cloud.google.com/go/privilegedaccessmanager`
+REST client) and sits outside `CloudProvider`; `cmd/pam.go` refuses non-GCP contexts.
 
 ### `k8s connect`
 

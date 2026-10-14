@@ -200,7 +200,14 @@ cml aws iam whoami
 
 ### GCP-Specific
 
-None yet; the planned `cml gcp` commands are in the backlog.
+```bash
+cml pam list                                         # requestable PAM entitlements
+cml pam request <entitlement> [-d 1h] [-j <reason>] [--wait]
+cml pam grants [--all]                               # grants the caller created
+```
+
+`pam` accepts `-c/--context` and `--location` (default `global`). Other planned `cml gcp`
+commands are in the backlog.
 
 ---
 
@@ -307,6 +314,7 @@ resolved context with a `switch` on `provider` (`aws` / `gcp`) in each `cmd/<res
 | `StorageProvider` | `ListBuckets`, `ListObjects`, `Copy`, `Sync`, `Presign` |
 | `LogsProvider` | `ListTargets`, `Query`, `Tail` |
 | `K8sProvider` | `ListClusters`, `GetCluster`, `UpdateKubeconfig` |
+| `PAMProvider` (GCP only, not in `CloudProvider`) | `ListEntitlements`, `ListGrants`, `GetGrant`, `RequestGrant` |
 
 ### Feature Support Matrix
 
@@ -422,7 +430,15 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
   presign, logs) and record the results — `docs/gcp-verification.md`: 13 ok, 2 expected errors
   (permission, user-ADC presign), `db connect` not run, `logs -f` failed on a 429 (fixed: the GCP tail now backs off)
 
+### Just-in-time access — after v0.12.0
+
+- [x] `cml pam list/request/grants` on GCP Privileged Access Manager (project-level entitlements,
+  `--location`, `--wait`, reuse of an open grant)
+
 ### Backlog — unscheduled
+
+- `cml pam`: entitlements on folders and organizations (`--folder`/`--organization`), withdrawing
+  a pending grant, and approver commands (`grants --approvable`, `approve`/`deny`)
 
 - `cml doctor --context <name>` to check a context other than the current one
 - Retry idempotent GCP REST reads (Secret Manager, Cloud SQL Admin, Cloud Logging, GKE, Cloud
@@ -445,7 +461,7 @@ Shared types live in `pkg/types/`: `VM`/`VMState`, `Database`, `Secret`/`SecretV
 | CLI framework | `github.com/spf13/cobra` |
 | Config management | `github.com/spf13/viper`, `gopkg.in/yaml.v3` |
 | AWS SDK | `github.com/aws/aws-sdk-go-v2` (EC2, Auto Scaling, ELBv2, RDS, S3, EKS, SSM, Secrets Manager, CloudWatch Logs, STS) |
-| GCP SDK | `cloud.google.com/go/compute` (VMs), `google.golang.org/api` (Secret Manager, Cloud SQL Admin, Cloud Storage, Cloud Logging, GKE), `golang.org/x/oauth2` |
+| GCP SDK | `cloud.google.com/go/compute` (VMs), `cloud.google.com/go/privilegedaccessmanager` (PAM), `google.golang.org/api` (Secret Manager, Cloud SQL Admin, Cloud Storage, Cloud Logging, GKE), `golang.org/x/oauth2` |
 | TUI framework | `github.com/charmbracelet/bubbletea` |
 | TUI styling | `github.com/charmbracelet/lipgloss` |
 | Unicode display width | `github.com/mattn/go-runewidth` |
