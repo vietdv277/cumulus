@@ -520,10 +520,12 @@ cml pam list -c prod-gcp --location global      # another context / PAM location
 `--duration` cannot exceed the entitlement's maximum. An entitlement that
 requires a justification prompts for one when `-j` is not given on a terminal,
 and fails without a terminal. When an open grant already exists on the
-entitlement, `request` shows it instead of creating a second one. `--wait`
-polls every 5s until the grant is active, and exits 1 if it is denied or fails
-to activate; Ctrl-C stops waiting and leaves the request open. Progress lines are
-written to stderr, so `-o json` prints only the grant.
+entitlement, `request` shows it instead of creating a second one. A grant that
+needs no approval activates within seconds, and `request` waits for it (up to
+2 minutes). `--wait` also waits through approval (polling every 5s), and exits 1
+if the grant is denied or fails to activate; Ctrl-C stops waiting and leaves the
+request open. Progress lines are written to stderr, so `-o json` prints only
+the grant.
 
 ## AWS-specific commands
 

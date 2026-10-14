@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -248,5 +249,77 @@ func TestPAMGCPContextRoutesToProvider(t *testing.T) {
 	}
 	if gotProject != "my-project" || gotLocation != "global" {
 		t.Errorf("project/location = %q/%q, want my-project/global", gotProject, gotLocation)
+	}
+}
+
+// recordSleeps makes r record each poll interval instead of sleeping.
+func recordSleeps(r *pamRequester) *[]time.Duration {
+	waits := &[]time.Duration{}
+	r.sleep = func(_ context.Context, d time.Duration) error {
+		*waits = append(*waits, d)
+		return nil
+	}
+	return waits
+}
+
+func TestPAMRequestWaitsForActivationByDefault(t *testing.T) {
+	f := &fakePAM{ents: testEntitlements(), states: []string{"SCHEDULED", "ACTIVATING", "ACTIVE"}}
+	r, _, _ := newTestRequester(f, "")
+	r.interval, r.activationTimeout = 5*time.Second, time.Minute
+	waits := recordSleeps(r)
+
+	g, err := r.request(context.Background(), "viewer", time.Hour, "", false)
+	if err != nil {
+		t.Fatalf("request() error = %v", err)
+	}
+	if g.State != "ACTIVE" {
+		t.Errorf("state = %s, want ACTIVE without --wait", g.State)
+	}
+	if fmt.Sprint(*waits) != fmt.Sprint([]time.Duration{2 * time.Second, 2 * time.Second}) {
+		t.Errorf("waits = %v, want two 2s activation polls", *waits)
+	}
+}
+
+func TestPAMRequestDoesNotWaitForApprovalByDefault(t *testing.T) {
+	f := &fakePAM{ents: testEntitlements(), states: []string{"APPROVAL_AWAITED", "ACTIVE"}}
+	r, _, sleeps := newTestRequester(f, "")
+	r.activationTimeout = time.Minute
+
+	g, err := r.request(context.Background(), "admin", time.Hour, "x", false)
+	if err != nil {
+		t.Fatalf("request() error = %v", err)
+	}
+	if g.State != "APPROVAL_AWAITED" || *sleeps != 0 || f.gets != 0 {
+		t.Errorf("state = %s after %d polls, want APPROVAL_AWAITED returned at once", g.State, *sleeps)
+	}
+}
+
+func TestPAMRequestActivationWaitTimesOut(t *testing.T) {
+	f := &fakePAM{ents: testEntitlements(), states: []string{"SCHEDULED"}}
+	r, status, _ := newTestRequester(f, "")
+	r.activationTimeout = time.Minute
+	r.sleep = func(context.Context, time.Duration) error { return context.DeadlineExceeded }
+
+	g, err := r.request(context.Background(), "viewer", time.Hour, "", false)
+	if err != nil {
+		t.Fatalf("request() error = %v, want nil when the activation wait times out", err)
+	}
+	if g.State != "SCHEDULED" || !strings.Contains(status.String(), "still SCHEDULED") {
+		t.Errorf("state = %s, status = %q, want the scheduled grant and a note", g.State, status.String())
+	}
+}
+
+func TestPAMRequestExplicitWaitPollsSlowerDuringApproval(t *testing.T) {
+	f := &fakePAM{ents: testEntitlements(), states: []string{"APPROVAL_AWAITED", "SCHEDULED", "ACTIVE"}}
+	r, _, _ := newTestRequester(f, "")
+	r.interval = 5 * time.Second
+	waits := recordSleeps(r)
+
+	g, err := r.request(context.Background(), "admin", time.Hour, "x", true)
+	if err != nil {
+		t.Fatalf("request() error = %v", err)
+	}
+	if g.State != "ACTIVE" || fmt.Sprint(*waits) != fmt.Sprint([]time.Duration{5 * time.Second, 2 * time.Second}) {
+		t.Errorf("state = %s, waits = %v, want ACTIVE after a 5s then a 2s poll", g.State, *waits)
 	}
 }
